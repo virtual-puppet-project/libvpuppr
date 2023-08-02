@@ -10,5 +10,10 @@ authors = ["Tim Yuen<timothy.yuen22@gmail.com>"]
 crate-type = ["cdylib"]
 
 [dependencies]
+chrono = { version = "0.4.26", default-features = false, features = [
+    "clock",
+    "std",
+    "time",
+] }
 godot = { git = "https://github.com/godot-rust/gdext", rev = "02823b4e80b126a84a9daaec93fe4d60338a8caa" }
 tot = "0.2.0"
