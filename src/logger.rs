@@ -48,10 +48,11 @@ enum LogLevel {
     Error,
 
     Debug,
+    Global,
 }
 
 #[derive(Debug, GodotClass)]
-struct Logger {
+pub struct Logger {
     name: GodotString,
 }
 
@@ -65,28 +66,40 @@ impl RefCountedVirtual for Logger {
 #[godot_api]
 impl Logger {
     #[func]
-    fn create(name: GodotString) -> Gd<Logger> {
+    pub fn create(name: GodotString) -> Gd<Logger> {
         Gd::new(Self::new(name))
     }
 
     #[func]
-    fn info(&self, message: Variant) {
+    pub fn info(&self, message: Variant) {
         self.log(LogLevel::Info, &mut message.stringify().to_string());
     }
 
     #[func]
-    fn warn(&self, message: Variant) {
+    pub fn warn(&self, message: Variant) {
         self.log(LogLevel::Warn, &mut message.stringify().to_string());
     }
 
     #[func]
-    fn error(&self, message: Variant) {
+    pub fn error(&self, message: Variant) {
         self.log(LogLevel::Error, &mut message.stringify().to_string());
     }
 
     #[func]
-    fn debug(&self, message: Variant) {
+    pub fn debug(&self, message: Variant) {
         self.log(LogLevel::Debug, &mut message.stringify().to_string());
+    }
+
+    #[func]
+    pub fn global(source: GodotString, message: Variant) {
+        let message = insert_metadata(
+            source.to_string(),
+            &LogLevel::Global,
+            &mut message.stringify().to_string(),
+        );
+
+        godot_print!("{message}");
+        add_to_log_store(message);
     }
 }
 
@@ -96,18 +109,22 @@ impl Logger {
     }
 
     fn log(&self, level: LogLevel, message: &mut String) {
-        let message = self.insert_metadata(level, message);
+        let message = insert_metadata(self.name.to_string(), &level, message);
 
-        godot_print!("{message}");
+        if level != LogLevel::Error {
+            godot_print!("{message}");
+        } else {
+            godot_error!("{message}");
+        }
         add_to_log_store(message);
     }
+}
 
-    fn insert_metadata(&self, level: LogLevel, message: &String) -> String {
-        let datetime = chrono::Local::now();
-        let date = datetime.date_naive();
-        let time = datetime.time();
-        let time = format!("{}_{}", date.format("%Y-%m-%d"), time.format("%H:%M:%S"));
+fn insert_metadata(logger_name: String, level: &LogLevel, message: &String) -> String {
+    let datetime = chrono::Local::now();
+    let date = datetime.date_naive();
+    let time = datetime.time();
+    let time = format!("{}_{}", date.format("%Y-%m-%d"), time.format("%H:%M:%S"));
 
-        format!("[{:?}] {} {} {}", level, time, self.name, message)
-    }
+    format!("[{:?}] {} {} {}", level, time, logger_name, message)
 }

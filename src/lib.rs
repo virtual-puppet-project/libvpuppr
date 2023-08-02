@@ -1,6 +1,8 @@
 mod logger;
-mod puppet;
-mod receiver;
+pub use logger::Logger;
+pub mod model;
+mod puppets;
+mod receivers;
 
 use godot::prelude::*;
 
