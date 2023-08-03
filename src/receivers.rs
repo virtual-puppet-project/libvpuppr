@@ -1,13 +1,23 @@
 mod meow_face;
 
-use godot::prelude::*;
+use godot::{engine::global::Error, prelude::*};
 
+/// A tracking data receiver.
 trait Receiver<T: GodotClass> {
+    /// Create an instance of the receiver.
     fn create_inner(data: Dictionary) -> Gd<T>;
 
+    /// Start the receiver.
+    ///
+    /// # Return
+    /// The PID if starting was successful or -1 on failure.
     fn start_inner(data: Dictionary) -> i64;
 
-    fn stop_inner() -> u32;
+    /// Stop the receiver.
+    ///
+    /// # Return
+    /// OK on success or an error code.
+    fn stop_inner() -> Error;
 }
 
 /// Automatically bind these receiver methods to Godot.
@@ -26,7 +36,7 @@ macro_rules! bind_receiver_to_godot {
             }
 
             #[func]
-            fn stop() -> u32 {
+            fn stop() -> Error {
                 Self::stop_inner()
             }
         }

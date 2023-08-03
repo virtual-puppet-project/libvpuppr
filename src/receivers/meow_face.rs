@@ -1,4 +1,4 @@
-use godot::prelude::*;
+use godot::{engine::global::Error, prelude::*};
 use std::net::{IpAddr, Ipv4Addr};
 
 use super::Receiver;
@@ -29,10 +29,10 @@ impl Receiver<MeowFace> for MeowFace {
         -1
     }
 
-    fn stop_inner() -> u32 {
+    fn stop_inner() -> Error {
         // TODO stub
 
-        0
+        Error::OK
     }
 }
 

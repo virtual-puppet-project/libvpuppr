@@ -1,18 +1,50 @@
 use std::path::PathBuf;
 
 use chrono::{serde::ts_seconds, DateTime, Utc};
-use godot::{engine::ProjectSettings, prelude::*};
+use godot::{
+    engine::{global::Error, ProjectSettings},
+    prelude::*,
+};
 use serde::{Deserialize, Serialize};
 
-type GodotPath = String;
+use crate::Logger;
+
+/// A newtype that represents a path that Godot is meant to use.
+///
+/// This can also be used for arbitrary paths, as Godot can handle arbitrary
+/// paths as well.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct GodotPath(String);
+
+impl std::ops::Deref for GodotPath {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<GodotString> for GodotPath {
+    fn from(value: GodotString) -> Self {
+        Self(value.to_string())
+    }
+}
 
 #[derive(Debug, Default, GodotClass, Serialize, Deserialize)]
 pub struct RunnerData {
+    /// The name of the Runner Data. Should generally be set to the name of the model.
     name: String,
+    /// The path to the runner used for handling the model.
     runner_path: GodotPath,
+    /// The path to the gui used in the runner.
     gui_path: GodotPath,
+    /// The path to the model
+    model_path: GodotPath,
+    /// The path to the preview image for the runner.
     preview_path: GodotPath,
+    /// Whether the [RunnerData] should be listed as a favorite.
     is_favorite: bool,
+    /// The last used time. Used for sorting runners.
     #[serde(with = "ts_seconds")]
     last_used: DateTime<Utc>,
 }
@@ -26,6 +58,10 @@ impl RefCountedVirtual for RunnerData {
 
 #[godot_api]
 impl RunnerData {
+    /// Try to load a `RunnerData` from a given path.
+    ///
+    /// # Returns
+    /// The `RunnerData` if successful or an empty `Variant` otherwise.
     #[func]
     fn try_load(path: GodotString) -> Gd<RunnerData> {
         let path: PathBuf = ProjectSettings::singleton()
@@ -39,7 +75,7 @@ impl RunnerData {
             }
         }
 
-        crate::Logger::global(
+        Logger::global(
             "RunnerData".into(),
             GodotString::from(format!("Unable to load runner data from path {path:?}"))
                 .to_variant(),
@@ -48,9 +84,40 @@ impl RunnerData {
         Gd::new_default()
     }
 
+    /// Try to save the `RunnerData` to the user data directory.
+    ///
+    /// # Returns
+    /// 0 on success or 1 otherwise.
     #[func]
-    fn try_save(&self) -> u32 {
-        0
+    fn try_save(&self) -> Error {
+        let path: PathBuf = ProjectSettings::singleton()
+            .globalize_path(format!("user://{}", self.to_file_name()).into())
+            .to_string()
+            .into();
+
+        let contents = match tot::to_string(&self) {
+            Ok(v) => v,
+            Err(e) => {
+                Logger::global(
+                    "RunnerData".into(),
+                    GodotString::from(format!("Unable to convert RunnerData to string: {e}"))
+                        .to_variant(),
+                );
+
+                return Error::ERR_INVALID_DATA;
+            }
+        };
+
+        match std::fs::write(path, contents) {
+            Ok(_) => Error::OK,
+            Err(e) => {
+                Logger::global(
+                    "source".into(),
+                    GodotString::from(format!("Unable to save RunnerData: {e}")).to_variant(),
+                );
+                Error::ERR_FILE_CANT_WRITE
+            }
+        }
     }
 
     #[func]
@@ -70,7 +137,7 @@ impl RunnerData {
 
     #[func]
     fn set_runner_path(&mut self, runner_path: GodotString) {
-        self.runner_path = runner_path.to_string();
+        self.runner_path = runner_path.into();
     }
 
     #[func]
@@ -80,7 +147,7 @@ impl RunnerData {
 
     #[func]
     fn set_gui_path(&mut self, gui_path: GodotString) {
-        self.gui_path = gui_path.to_string()
+        self.gui_path = gui_path.into();
     }
 
     #[func]
@@ -90,7 +157,7 @@ impl RunnerData {
 
     #[func]
     fn set_preview_path(&mut self, preview_path: GodotString) {
-        self.preview_path = preview_path.to_string();
+        self.preview_path = preview_path.into();
     }
 
     #[func]
@@ -103,6 +170,7 @@ impl RunnerData {
         self.is_favorite = is_favorite;
     }
 
+    /// Get the last used date as a string.
     #[func]
     fn get_last_used_string(&self) -> GodotString {
         self.last_used
@@ -111,6 +179,7 @@ impl RunnerData {
             .into()
     }
 
+    /// Get the last used date as a unix timestamp.
     #[func]
     fn get_last_used_int(&self) -> i64 {
         self.last_used.timestamp()
@@ -118,11 +187,17 @@ impl RunnerData {
 }
 
 impl RunnerData {
+    /// Create a new [RunnerData].
     fn new() -> Self {
         Self {
             is_favorite: false,
             last_used: chrono::Utc::now(),
             ..Default::default()
         }
+    }
+
+    /// Construct a file name based off of the configured data.
+    fn to_file_name(&self) -> String {
+        format!("{}.tot", self.name)
     }
 }
