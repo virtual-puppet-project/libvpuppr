@@ -63,7 +63,7 @@ impl RunnerData {
     /// # Returns
     /// The `RunnerData` if successful or an empty `Variant` otherwise.
     #[func]
-    fn try_load(path: GodotString) -> Gd<RunnerData> {
+    fn try_load(path: GodotString) -> Variant {
         let path: PathBuf = ProjectSettings::singleton()
             .globalize_path(path)
             .to_string()
@@ -71,7 +71,7 @@ impl RunnerData {
 
         if let Ok(v) = std::fs::read_to_string(&path) {
             if let Ok(v) = tot::from_str::<RunnerData>(v.as_str()) {
-                return Gd::new(v);
+                return Gd::new(v).to_variant();
             }
         }
 
@@ -81,13 +81,13 @@ impl RunnerData {
                 .to_variant(),
         );
 
-        Gd::new_default()
+        Variant::nil()
     }
 
     /// Try to save the `RunnerData` to the user data directory.
     ///
     /// # Returns
-    /// 0 on success or 1 otherwise.
+    /// OK on success or an error code otherwise.
     #[func]
     fn try_save(&self) -> Error {
         let path: PathBuf = ProjectSettings::singleton()
@@ -120,6 +120,12 @@ impl RunnerData {
         }
     }
 
+    /// Set the `last_used` timestamp to now in UTC time.
+    #[func]
+    fn timestamp(&mut self) {
+        self.last_used = Utc::now();
+    }
+
     #[func]
     fn get_name(&self) -> GodotString {
         self.name.clone().into()
@@ -148,6 +154,16 @@ impl RunnerData {
     #[func]
     fn set_gui_path(&mut self, gui_path: GodotString) {
         self.gui_path = gui_path.into();
+    }
+
+    #[func]
+    fn get_model_path(&self) -> GodotString {
+        self.model_path.clone().into()
+    }
+
+    #[func]
+    fn set_model_path(&mut self, model_path: GodotString) {
+        self.model_path = model_path.into();
     }
 
     #[func]

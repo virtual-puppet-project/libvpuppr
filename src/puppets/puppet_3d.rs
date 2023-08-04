@@ -29,7 +29,7 @@ impl BlendShapeMapping {
 }
 
 /// VRM-specific data.
-#[derive(Debug, GodotClass)]
+#[derive(Debug)]
 struct VrmData {
     /// VRM metadata stored in the `gltf` model.
     vrm_meta: Dictionary,
@@ -39,17 +39,6 @@ struct VrmData {
 
     /// The specific way a model should be handled based off of its features.
     vrm_features: VrmFeatures,
-}
-
-#[godot_api]
-impl RefCountedVirtual for VrmData {
-    fn init(_base: godot::obj::Base<Self::Base>) -> Self {
-        Self {
-            vrm_meta: Dictionary::new(),
-            expression_mappings: HashMap::new(),
-            vrm_features: VrmFeatures::None,
-        }
-    }
 }
 
 /// Possible ways a VRM model should be handled.
@@ -78,7 +67,7 @@ enum VrmFeatures {
 
 // TODO this might be wrong
 /// The default skeleton name for finding the skeleton node.
-const SKELETON_NODE_NAME: &str = "Skeleton3D";
+const SKELETON_NODE_NAME: &str = "*Skeleton*";
 
 /// A 3D puppet, compatible with both regular `glb` models and `vrm` models.
 #[derive(Debug, GodotClass)]
@@ -95,8 +84,7 @@ struct Puppet3d {
     /// Whether the puppet should try and load vrm-specific fields.
     #[var]
     is_vrm: bool,
-    #[var]
-    vrm_data: Option<Gd<VrmData>>,
+    vrm_data: Option<VrmData>,
 
     /// The skeleton of the puppet.
     #[var]
@@ -140,25 +128,38 @@ impl Node3DVirtual for Puppet3d {
     }
 
     fn ready(&mut self) {
-        if let Some(v) = self.base.find_child(gstring!(SKELETON_NODE_NAME)) {
+        let logger = self.logger.bind();
+
+        logger.debug(vstring!("Starting ready!"));
+
+        if let Some(v) = self
+            .base
+            .find_child_ex(gstring!(SKELETON_NODE_NAME))
+            .owned(false)
+            .done()
+        {
             match v.try_cast::<Skeleton3D>() {
                 Some(v) => {
+                    logger.debug(vstring!(format!("{}", &v)));
                     let _ = self.skeleton.replace(v);
                 }
                 None => {
-                    self.logger
-                        .bind()
-                        .error(vstring!("Unable to find skeleton node, bailing out early!"));
+                    logger.error(vstring!(
+                        "Unable to cast to skeleton node, bailing out early!"
+                    ));
                     return;
                 }
             }
+        } else {
+            logger.error(vstring!("Unable to find skeleton node, bailing out early!"));
+            return;
         }
 
         let skeleton = self.skeleton.as_ref().unwrap();
 
         self.head_bone_id = skeleton.find_bone(self.head_bone.clone());
         if self.head_bone_id < 0 {
-            self.logger.bind().error(vstring!("No head bone found!"));
+            logger.error(vstring!("No head bone found!"));
         }
 
         // TODO init skeleton bone transforms from config
@@ -168,16 +169,25 @@ impl Node3DVirtual for Puppet3d {
             self.initial_bone_poses.insert(i, skeleton.get_bone_pose(i));
         }
 
+        // Pre-allocate the name here and then clone it in the loop
+        let mesh_instance_3d_name = gstring!("MeshInstance3D");
+
         // Populating the blend shape mappings is extremely verbose
         for child in skeleton.get_children().iter_shared() {
-            if !child.is_class(gstring!("MeshInstance3D")) {
+            // Used for debugging only
+            let child_name = child.get_name();
+
+            if !child.is_class(mesh_instance_3d_name.clone()) {
+                logger.debug(vstring!(format!(
+                    "Child {child_name} was not a MeshInstance3D, skipping"
+                )));
                 continue;
             }
 
             let child = child.try_cast::<MeshInstance3D>();
             if child.is_none() {
-                self.logger.bind().error(vstring!(
-                    "Skeleton child was a MeshInstance3D but was unable to cast to MeshInstance3D"
+                logger.error(vstring!(
+                    format!("Skeleton child {child_name} was a MeshInstance3D but was unable to cast to MeshInstance3D")
                 ));
                 continue;
             }
@@ -186,18 +196,18 @@ impl Node3DVirtual for Puppet3d {
             let mesh = match child.get_mesh() {
                 Some(v) => v,
                 None => {
-                    self.logger
-                        .bind()
-                        .error(vstring!("Unable to get mesh from MeshInstance3D, skipping"));
+                    logger.error(vstring!(format!(
+                        "Unable to get mesh from MeshInstance3D {child_name}, skipping"
+                    )));
                     continue;
                 }
             };
             let mesh = match mesh.try_cast::<ArrayMesh>() {
                 Some(v) => v,
                 None => {
-                    self.logger
-                        .bind()
-                        .error(vstring!("Unable to convert mesh into ArrayMesh, skipping"));
+                    logger.error(vstring!(format!(
+                        "Unable to convert mesh from {child_name} into ArrayMesh, skipping"
+                    )));
                     continue;
                 }
             };
@@ -223,6 +233,22 @@ impl Node3DVirtual for Puppet3d {
 
 #[godot_api]
 impl Puppet3d {
+    #[func]
+    fn set_vrm_meta(&mut self, vrm_meta: Dictionary) {
+        match self.vrm_data.as_mut() {
+            Some(v) => {
+                v.vrm_meta = vrm_meta;
+
+                // TODO stub
+            }
+            None => {
+                self.logger.bind().error(vstring!(
+                    "Tried to set vrm_meta on a non-vrm model or the VrmData struct was None."
+                ));
+            }
+        }
+    }
+
     /// Move VRM bones into an a-pose.
     #[func]
     fn a_pose(&mut self) -> Error {
@@ -239,7 +265,7 @@ impl Puppet3d {
             return Error::ERR_INVALID_DATA;
         }
 
-        let vrm = self.vrm_data.as_ref().unwrap().bind();
+        let vrm = self.vrm_data.as_ref().unwrap();
 
         let mappings = match vrm.vrm_meta.get("humanoid_bone_mapping") {
             Some(v) => {
