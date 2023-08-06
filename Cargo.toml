@@ -1,5 +1,5 @@
 [package]
-name = "vpuppr-rust-lib"
+name = "libvpuppr"
 version = "0.1.0"
 edition = "2021"
 authors = ["Tim Yuen<timothy.yuen22@gmail.com>"]

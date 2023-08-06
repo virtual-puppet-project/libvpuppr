@@ -1,3 +1,7 @@
+/*!
+A receiver for [MeowFace](https://play.google.com/store/apps/details?id=com.suvidriel.meowface) data.
+*/
+
 use godot::{engine::global::Error, prelude::*};
 use std::net::{IpAddr, Ipv4Addr};
 

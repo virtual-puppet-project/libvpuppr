@@ -3,5 +3,8 @@ entry_symbol = "gdext_rust_init"
 compatibility_minimum = 4.1
 
 [libraries]
-windows.debug.x86_64 = "res://vpuppr-rust-lib/target/debug/vpuppr_rust_lib.dll"
-windows.release.x86_64 = "res://vpuppr-rust-lib/target/release/vpuppr_rust_lib.dll"
+windows.debug.x86_64 = "res://libvpuppr/target/debug/libvpuppr.dll"
+windows.release.x86_64 = "res://libvpuppr/target/release/libvpuppr.dll"
+
+linux.debug.x86_64 = "res://libvpuppr/target/debug/libvpuppr.so"
+linux.release.x86_64 = "res://libvpuppr/target/release/libvpuppr.so"

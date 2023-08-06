@@ -1,3 +1,4 @@
+mod lip_sync;
 mod meow_face;
 
 use godot::{engine::global::Error, prelude::*};
