@@ -4,7 +4,7 @@ use crate::{gstring, vstring, Logger};
 
 #[derive(Debug, GodotClass)]
 #[class(base = Node2D)]
-struct Puppet2d {
+pub struct Puppet2d {
     #[var]
     logger: Gd<Logger>,
 

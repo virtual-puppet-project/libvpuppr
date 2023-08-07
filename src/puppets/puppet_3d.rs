@@ -7,6 +7,8 @@ use godot::{
 
 use crate::{gstring, vstring, Logger};
 
+use super::Visitor;
+
 /// Contains data necessary for manipulating blend shapes.
 #[derive(Debug)]
 struct BlendShapeMapping {
@@ -72,10 +74,10 @@ const SKELETON_NODE_NAME: &str = "*Skeleton*";
 /// A 3D puppet, compatible with both regular `glb` models and `vrm` models.
 #[derive(Debug, GodotClass)]
 #[class(base = Node3D)]
-struct Puppet3d {
+pub struct Puppet3d {
     /// The [Logger] for the puppet.
     #[var]
-    logger: Gd<Logger>,
+    pub logger: Gd<Logger>,
 
     /// The base Godot node this struct inherits from.
     #[base]
@@ -83,21 +85,21 @@ struct Puppet3d {
 
     /// Whether the puppet should try and load vrm-specific fields.
     #[var]
-    is_vrm: bool,
+    pub is_vrm: bool,
     vrm_data: Option<VrmData>,
 
     /// The skeleton of the puppet.
     #[var]
-    skeleton: Option<Gd<Skeleton3D>>,
+    pub skeleton: Option<Gd<Skeleton3D>>,
     /// The name of the head bone. This is only used to find the `head_bone_id`.
     #[var]
     head_bone: GodotString,
     /// The index/id of the head bone in the skeleton.
     #[var]
-    head_bone_id: i32,
+    pub head_bone_id: i32,
     /// Additional bone ids that should be moved when the head bone moves.
     #[var]
-    additional_movement_bones: Array<i32>,
+    pub additional_movement_bones: Array<i32>,
     /// The initial pose of the skeleton for easy pose resetting.
     #[var]
     initial_bone_poses: Dictionary,
@@ -228,13 +230,17 @@ impl Node3DVirtual for Puppet3d {
                 );
             }
         }
+
+        if self.is_vrm {
+            //
+        }
     }
 }
 
 #[godot_api]
 impl Puppet3d {
     #[func]
-    fn set_vrm_meta(&mut self, vrm_meta: Dictionary) {
+    pub fn set_vrm_meta(&mut self, vrm_meta: Dictionary) {
         match self.vrm_data.as_mut() {
             Some(v) => {
                 v.vrm_meta = vrm_meta;
@@ -251,7 +257,7 @@ impl Puppet3d {
 
     /// Move VRM bones into an a-pose.
     #[func]
-    fn a_pose(&mut self) -> Error {
+    pub fn a_pose(&mut self) -> Error {
         let logger = self.logger.bind();
 
         if !self.is_vrm {
@@ -329,5 +335,20 @@ impl Puppet3d {
         }
 
         Error::OK
+    }
+
+    #[func]
+    fn visit_meow_face(&mut self, meow_face: Gd<crate::receivers::meow_face::MeowFace>) {
+        self.visit_meow_face_inner(&meow_face.bind().data);
+    }
+}
+
+impl super::Visitor for Puppet3d {
+    fn visit_mediapipe_inner(&mut self, _data: godot::prelude::Dictionary) {
+        //
+    }
+
+    fn visit_meow_face_inner(&mut self, data: &crate::receivers::meow_face::Data) {
+        //
     }
 }
