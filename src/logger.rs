@@ -1,9 +1,11 @@
 use std::io::Write;
 
 use godot::{engine::ProjectSettings, prelude::*};
+use once_cell::sync::Lazy;
 
-const MAX_LOGS: u8 = 100;
-static mut LOG_STORE: Vec<String> = vec![];
+const MAX_LOGS: usize = 128;
+// TODO could use arrayvec
+static mut LOG_STORE: Lazy<Vec<String>> = Lazy::new(|| Vec::with_capacity(MAX_LOGS));
 
 /// Add a `message` to the static `LOG_STORE`.
 ///
@@ -14,7 +16,7 @@ fn add_to_log_store(message: String) {
     unsafe {
         LOG_STORE.push(message);
 
-        if LOG_STORE.len() > MAX_LOGS.into() {
+        if LOG_STORE.len() >= MAX_LOGS.into() {
             flush_logs();
         }
     }
@@ -63,15 +65,15 @@ enum LogLevel {
 }
 
 /// A structured logger that helps work around Godot dropping logs when it crashes.
-#[derive(Debug, GodotClass)]
+#[derive(Debug, Clone, GodotClass)]
 pub struct Logger {
-    name: GodotString,
+    name: String,
 }
 
 #[godot_api]
 impl RefCountedVirtual for Logger {
     fn init(_base: godot::obj::Base<Self::Base>) -> Self {
-        Self::new(GodotString::from("DefaultLogger"))
+        Self::new("DefaultLogger".to_string())
     }
 }
 
@@ -81,41 +83,43 @@ impl Logger {
     /// duplicate names but this is **_strongly_** discouraged.
     #[func]
     pub fn create(name: GodotString) -> Gd<Logger> {
-        Gd::new(Self::new(name))
+        Gd::new(Self::new(name.into()))
     }
 
+    /// Sets the name of the logger.
+    #[func]
     pub fn set_name(&mut self, name: GodotString) {
         self.name = name.into();
     }
 
     /// Send a log at the `Info` log level. Logs are printed to stdout.
-    #[func]
-    pub fn info(&self, message: Variant) {
+    #[func(rename = info)]
+    pub fn info_bound(&self, message: Variant) {
         self.log(LogLevel::Info, &mut message.stringify().to_string());
     }
 
     /// Send a log at the `Warn` log level. Logs are printed to stdout.
-    #[func]
-    pub fn warn(&self, message: Variant) {
+    #[func(rename = warn)]
+    pub fn warn_bound(&self, message: Variant) {
         self.log(LogLevel::Warn, &mut message.stringify().to_string());
     }
 
     /// Send a log at the `Error` log level. Logs are printed to stderr.
-    #[func]
-    pub fn error(&self, message: Variant) {
+    #[func(rename = error)]
+    pub fn error_bound(&self, message: Variant) {
         self.log(LogLevel::Error, &mut message.stringify().to_string());
     }
 
     /// Send a log at the `Debug` log leve. Logs are printed to stdout.
-    #[func]
-    pub fn debug(&self, message: Variant) {
+    #[func(rename = debug)]
+    pub fn debug_bound(&self, message: Variant) {
         #[cfg(debug_assertions)]
         self.log(LogLevel::Debug, &mut message.stringify().to_string());
     }
 
     /// Send a log using an anonymous logger. Logs are printed to stdout.
-    #[func]
-    pub fn global(source: GodotString, message: Variant) {
+    #[func(rename = global)]
+    pub fn global_bound(source: GodotString, message: Variant) {
         let message = insert_metadata(
             source.to_string(),
             &LogLevel::Global,
@@ -129,13 +133,16 @@ impl Logger {
 
 impl Logger {
     /// Create a new logger with the given name.
-    fn new(name: GodotString) -> Self {
+    fn new(name: String) -> Self {
         Self { name }
     }
 
     /// Use the given `level` and `message` to send a log and add the log to
     /// the static `LOG_STORE`.
-    fn log(&self, level: LogLevel, message: &mut String) {
+    fn log<T>(&self, level: LogLevel, message: T)
+    where
+        T: std::fmt::Display,
+    {
         let message = insert_metadata(self.name.to_string(), &level, message);
 
         if level != LogLevel::Error {
@@ -145,10 +152,51 @@ impl Logger {
         }
         add_to_log_store(message);
     }
+
+    pub fn info<T>(&self, mut message: T)
+    where
+        T: std::fmt::Display,
+    {
+        self.log(LogLevel::Info, &mut message);
+    }
+
+    pub fn warn<T>(&self, mut message: T)
+    where
+        T: std::fmt::Display,
+    {
+        self.log(LogLevel::Warn, &mut message);
+    }
+
+    pub fn error<T>(&self, mut message: T)
+    where
+        T: std::fmt::Display,
+    {
+        self.log(LogLevel::Error, &mut message);
+    }
+
+    pub fn debug<T>(&self, mut message: T)
+    where
+        T: std::fmt::Display,
+    {
+        self.log(LogLevel::Debug, &mut message);
+    }
+
+    pub fn global<T>(source: T, message: T)
+    where
+        T: std::fmt::Display,
+    {
+        let message = insert_metadata(source.to_string(), &LogLevel::Global, message);
+
+        godot_print!("{message}");
+        add_to_log_store(message);
+    }
 }
 
 /// Modify a given log message with the logger name, log level, and datetime.
-fn insert_metadata(logger_name: String, level: &LogLevel, message: &String) -> String {
+fn insert_metadata<T>(logger_name: String, level: &LogLevel, message: T) -> String
+where
+    T: std::fmt::Display,
+{
     let datetime = chrono::Local::now();
     let date = datetime.date_naive();
     let time = datetime.time();

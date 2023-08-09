@@ -21,17 +21,25 @@ use crate::{
 
 use super::Receiver as GodotReceiver;
 
-static SEND_DATA: Lazy<Vec<u8>> = Lazy::new(|| {
-    serde_json::to_string(&serde_json::json!({
-        "messageType": "iOSTrackingDataRequest",
-        "time": 1.0,
-        "sentBy": "vpuppr",
-        "ports": [21412]
-    }))
-    .unwrap()
-    .as_bytes()
-    .to_vec()
-});
+// static SEND_DATA: Lazy<Vec<u8>> = Lazy::new(|| {
+//     serde_json::to_string(&serde_json::json!({
+//         "messageType": "iOSTrackingDataRequest",
+//         "time": 1.0,
+//         "sentBy": "vpuppr",
+//         "ports": [21412]
+//     }))
+//     .unwrap()
+//     .as_bytes()
+//     .to_vec()
+// });
+
+// TODO maybe increment time?
+static SEND_DATA: &str = "{
+    \"messageType\": \"iOSTrackingDataRequest\",
+    \"time\": 1.0,
+    \"sentBy\": \"vpuppr\",
+    \"ports\": [21412]
+}";
 
 #[derive(Debug, Serialize, Deserialize)]
 struct InData {
@@ -53,13 +61,13 @@ struct InBlendShape {
 
 #[derive(Debug, Default)]
 pub(crate) struct Data {
-    blend_shapes: HashMap<String, f32>,
+    pub blend_shapes: HashMap<String, f32>,
 
-    head_rotation: Vector3,
-    head_position: Vector3,
+    pub head_rotation: Vector3,
+    pub head_position: Vector3,
 
-    left_eye_rotation: Vector3,
-    right_eye_rotation: Vector3,
+    pub left_eye_rotation: Vector3,
+    pub right_eye_rotation: Vector3,
 }
 
 impl From<InData> for Data {
@@ -95,7 +103,7 @@ impl RefCountedVirtual for MeowFace {
 }
 
 impl GodotReceiver<MeowFace> for MeowFace {
-    fn create_inner(data: &Dictionary) -> Option<Gd<MeowFace>> {
+    fn create(data: &Dictionary) -> Option<Gd<MeowFace>> {
         let mut meow_face = Self::new();
 
         let logger = meow_face.logger.bind();
@@ -105,12 +113,12 @@ impl GodotReceiver<MeowFace> for MeowFace {
                 if v.get_type() == VariantType::String {
                     v.stringify()
                 } else {
-                    logger.error(vstring!("Unable to convert address to string."));
+                    logger.error("Unable to convert address to string.");
                     return None;
                 }
             }
             None => {
-                logger.error(vstring!("MeowFace expected an 'address'."));
+                logger.error("MeowFace expected an 'address'.");
                 return None;
             }
         };
@@ -119,12 +127,12 @@ impl GodotReceiver<MeowFace> for MeowFace {
                 if v.get_type() == VariantType::String {
                     v.stringify()
                 } else {
-                    logger.error(vstring!("Unable to convert port to string."));
+                    logger.error("Unable to convert port to string.");
                     return None;
                 }
             }
             None => {
-                logger.error(vstring!("MeowFace expected a 'port'."));
+                logger.error("MeowFace expected a 'port'.");
                 return None;
             }
         };
@@ -132,7 +140,7 @@ impl GodotReceiver<MeowFace> for MeowFace {
         let ip_address = match format!("{}:{}", address, port).parse::<SocketAddrV4>() {
             Ok(v) => v,
             Err(e) => {
-                logger.error(vstring!(format!("{e}")));
+                logger.error(format!("{e}"));
                 return None;
             }
         };
@@ -144,47 +152,55 @@ impl GodotReceiver<MeowFace> for MeowFace {
         Some(Gd::new(meow_face))
     }
 
-    fn start_inner(&mut self) -> Error {
+    fn start(&mut self) -> Error {
         let logger = self.logger.bind();
 
-        logger.info(vstring!("Starting MeowFace!"));
+        logger.info("Starting MeowFace!");
 
         if self.ip_address.is_none() {
             return Error::ERR_UNCONFIGURED;
         }
 
-        let socket = match UdpSocket::bind(self.ip_address.unwrap()) {
+        let socket = match UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 21412)) {
             Ok(v) => v,
             Err(e) => {
-                logger.error(vstring!(format!("{e}")));
+                logger.error(format!("Unable to bind socket: {e}"));
                 return Error::ERR_CANT_CONNECT;
             }
         };
-        if let Err(e) = socket.set_nonblocking(true) {
-            logger.error(vstring!(format!("{e}")));
+        if let Err(e) = socket.set_nonblocking(false) {
+            logger.error(format!("Unable to set socket as blocking: {e}"));
             return Error::ERR_CANT_CREATE;
+        }
+        if let Err(e) = socket.set_read_timeout(Some(Duration::from_secs_f32(0.1))) {
+            logger.error(format!("Unable to set read timeout for socket: {e}"));
+        }
+        if let Err(e) = socket.connect(self.ip_address.unwrap()) {
+            logger.error(format!(
+                "Unable to connect to address {address}: {e}",
+                address = self.ip_address.unwrap()
+            ));
+            return Error::ERR_CANT_CONNECT;
         }
 
         let (thread_sender, godot_receiver) = mpsc::channel::<Data>();
         let (godot_sender, thread_receiver) = mpsc::channel::<()>();
 
-        let mut buf = Vec::new();
+        let thread_logger = self.logger.bind().clone();
+        let mut buf = Vec::with_capacity(1024);
         let handle = std::thread::spawn(move || loop {
-            std::thread::sleep(Duration::from_secs_f32(0.1));
-
             buf.clear();
 
             if let Ok(_) = thread_receiver.try_recv() {
                 break;
             }
 
-            if let Err(e) = socket.send(SEND_DATA.as_slice()) {
-                godot_error!("{e}");
-            }
-
-            if let Err(e) = socket.recv(&mut buf) {
-                godot_error!("{e}");
+            // TODO
+            if let Err(e) = socket.send(SEND_DATA.as_bytes()) {
+                // if let Err(e) = socket.send_to(SEND_DATA.as_bytes(), ("192.168.88.98", 21412)) {
+                thread_logger.error(format!("Unable to send message on socket: {e}"));
             } else {
+                thread_logger.debug("sent data");
             }
 
             match socket.recv(&mut buf) {
@@ -192,17 +208,20 @@ impl GodotReceiver<MeowFace> for MeowFace {
                     let data = match serde_json::from_slice::<InData>(buf.as_slice()) {
                         Ok(v) => v,
                         Err(e) => {
-                            godot_error!("{e}");
+                            thread_logger.error(format!("Error while receiving data: {e}"));
                             continue;
                         }
                     };
 
                     if let Err(e) = thread_sender.send(Data::from(data)) {
-                        godot_error!("{e}");
+                        thread_logger.error(format!("Error while sending data back to godot: {e}"));
+                    } else {
+                        godot_print!("sent data!");
                     }
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(e) => godot_error!("{e}"),
+                Err(e) => {
+                    thread_logger.error(format!("Unexpected error while receiving: {e}"));
+                }
             }
         });
 
@@ -213,52 +232,52 @@ impl GodotReceiver<MeowFace> for MeowFace {
         Error::OK
     }
 
-    fn stop_inner(&mut self) -> Error {
+    fn stop(&mut self) -> Error {
         let logger = self.logger.bind();
 
         if self.receive_handle.is_none() {
-            logger.error(vstring!("Receiver was not started."));
+            logger.error("Receiver was not started.");
             return Error::ERR_UNAVAILABLE;
         }
         if self.thread_killer.is_none() {
-            logger.error(vstring!("No thread sender found. This is a major bug."));
+            logger.error("No thread sender found. This is a major bug.");
             return Error::ERR_UNAVAILABLE;
         }
 
         let thread_killer = self.thread_killer.as_ref().unwrap();
         if let Err(e) = thread_killer.send(()) {
-            logger.error(vstring!(format!("MAJOR BUG: {e}")));
+            logger.error(format!("MAJOR BUG: {e}"));
         }
 
         let handle = self.receive_handle.take().unwrap();
         if let Err(e) = handle.join() {
-            logger.error(vstring!(format!("MAJOR BUG: {e:?}")));
+            logger.error(format!("MAJOR BUG: {e:?}"));
         }
 
         Error::OK
     }
 
-    fn poll_inner(&mut self) {
+    fn poll(&mut self) {
         match self.receiver.as_ref().unwrap().try_recv() {
             Ok(v) => {
                 godot_print!("{v:?}");
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
-                self.logger.bind().error(vstring!(
-                    "Receiver was disconnected somehow, shutting down MeowFace"
-                ));
-                self.stop_inner();
+                self.logger
+                    .bind()
+                    .error("Receiver was disconnected somehow, shutting down MeowFace");
+                self.stop();
             }
         }
     }
 
-    fn handle_puppet3d_inner(&self, mut puppet: Gd<Puppet3d>) {
+    fn handle_puppet3d(&self, mut puppet: Gd<Puppet3d>) {
         let mut p = puppet.bind_mut();
-        p.visit_meow_face_inner(&self.data);
+        p.visit_meow_face(&self.data);
     }
 
-    fn handle_puppet2d_inner(&self, mut puppet: Gd<Puppet2d>) {
+    fn handle_puppet2d(&self, mut puppet: Gd<Puppet2d>) {
         let p = puppet.bind_mut();
 
         todo!()

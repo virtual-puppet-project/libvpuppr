@@ -76,9 +76,8 @@ impl RunnerData {
         }
 
         Logger::global(
-            "RunnerData".into(),
-            GodotString::from(format!("Unable to load runner data from path {path:?}"))
-                .to_variant(),
+            "RunnerData",
+            &format!("Unable to load runner data from path {path:?}"),
         );
 
         Variant::nil()
@@ -99,9 +98,8 @@ impl RunnerData {
             Ok(v) => v,
             Err(e) => {
                 Logger::global(
-                    "RunnerData".into(),
-                    GodotString::from(format!("Unable to convert RunnerData to string: {e}"))
-                        .to_variant(),
+                    "RunnerData",
+                    &format!("Unable to convert RunnerData to string: {e}"),
                 );
 
                 return Error::ERR_INVALID_DATA;
@@ -111,10 +109,7 @@ impl RunnerData {
         match std::fs::write(path, contents) {
             Ok(_) => Error::OK,
             Err(e) => {
-                Logger::global(
-                    "source".into(),
-                    GodotString::from(format!("Unable to save RunnerData: {e}")).to_variant(),
-                );
+                Logger::global("source", &format!("Unable to save RunnerData: {e}"));
                 Error::ERR_FILE_CANT_WRITE
             }
         }

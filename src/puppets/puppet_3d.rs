@@ -132,7 +132,7 @@ impl Node3DVirtual for Puppet3d {
     fn ready(&mut self) {
         let logger = self.logger.bind();
 
-        logger.debug(vstring!("Starting ready!"));
+        logger.debug("Starting ready!");
 
         if let Some(v) = self
             .base
@@ -142,18 +142,15 @@ impl Node3DVirtual for Puppet3d {
         {
             match v.try_cast::<Skeleton3D>() {
                 Some(v) => {
-                    logger.debug(vstring!(format!("{}", &v)));
                     let _ = self.skeleton.replace(v);
                 }
                 None => {
-                    logger.error(vstring!(
-                        "Unable to cast to skeleton node, bailing out early!"
-                    ));
+                    logger.error("Unable to cast to skeleton node, bailing out early!");
                     return;
                 }
             }
         } else {
-            logger.error(vstring!("Unable to find skeleton node, bailing out early!"));
+            logger.error("Unable to find skeleton node, bailing out early!");
             return;
         }
 
@@ -161,7 +158,7 @@ impl Node3DVirtual for Puppet3d {
 
         self.head_bone_id = skeleton.find_bone(self.head_bone.clone());
         if self.head_bone_id < 0 {
-            logger.error(vstring!("No head bone found!"));
+            logger.error("No head bone found!");
         }
 
         // TODO init skeleton bone transforms from config
@@ -180,17 +177,17 @@ impl Node3DVirtual for Puppet3d {
             let child_name = child.get_name();
 
             if !child.is_class(mesh_instance_3d_name.clone()) {
-                logger.debug(vstring!(format!(
+                logger.debug(format!(
                     "Child {child_name} was not a MeshInstance3D, skipping"
-                )));
+                ));
                 continue;
             }
 
             let child = child.try_cast::<MeshInstance3D>();
             if child.is_none() {
-                logger.error(vstring!(
+                logger.error(
                     format!("Skeleton child {child_name} was a MeshInstance3D but was unable to cast to MeshInstance3D")
-                ));
+                );
                 continue;
             }
 
@@ -198,18 +195,18 @@ impl Node3DVirtual for Puppet3d {
             let mesh = match child.get_mesh() {
                 Some(v) => v,
                 None => {
-                    logger.error(vstring!(format!(
+                    logger.error(format!(
                         "Unable to get mesh from MeshInstance3D {child_name}, skipping"
-                    )));
+                    ));
                     continue;
                 }
             };
             let mesh = match mesh.try_cast::<ArrayMesh>() {
                 Some(v) => v,
                 None => {
-                    logger.error(vstring!(format!(
+                    logger.error(format!(
                         "Unable to convert mesh from {child_name} into ArrayMesh, skipping"
-                    )));
+                    ));
                     continue;
                 }
             };
@@ -248,9 +245,9 @@ impl Puppet3d {
                 // TODO stub
             }
             None => {
-                self.logger.bind().error(vstring!(
-                    "Tried to set vrm_meta on a non-vrm model or the VrmData struct was None."
-                ));
+                self.logger.bind().error(
+                    "Tried to set vrm_meta on a non-vrm model or the VrmData struct was None.",
+                );
             }
         }
     }
@@ -261,13 +258,13 @@ impl Puppet3d {
         let logger = self.logger.bind();
 
         if !self.is_vrm {
-            logger.warn(vstring!(
+            logger.warn(
                 "A VRM model is required for automatic a-posing. This is because VRM models guarantee certain bones exist."
-            ));
+            );
             return Error::ERR_UNCONFIGURED;
         }
         if self.vrm_data.is_none() {
-            logger.error(vstring!("vrm_data is None, this is a bug!"));
+            logger.error("vrm_data is None, this is a bug!");
             return Error::ERR_INVALID_DATA;
         }
 
@@ -276,13 +273,13 @@ impl Puppet3d {
         let mappings = match vrm.vrm_meta.get("humanoid_bone_mapping") {
             Some(v) => {
                 if v.get_type() != VariantType::Dictionary {
-                    logger.error(vstring!("humanoid_bone_mapping was not a Dictionary"));
+                    logger.error("humanoid_bone_mapping was not a Dictionary");
                     return Error::ERR_INVALID_DATA;
                 }
                 match v.try_to::<Dictionary>() {
                     Ok(v) => v,
                     Err(_) => {
-                        logger.error(vstring!("Unable to convert humanoid_bone_mapping Variant to Dictionary, this is probably a godot-rust bug!"));
+                        logger.error("Unable to convert humanoid_bone_mapping Variant to Dictionary, this is probably a godot-rust bug!");
                         return Error::ERR_INVALID_DATA;
                     }
                 }
@@ -290,7 +287,7 @@ impl Puppet3d {
             None => {
                 self.logger
                     .bind()
-                    .error(vstring!("No humanoid_bone_mapping found on vrm_meta"));
+                    .error("No humanoid_bone_mapping found on vrm_meta");
                 return Error::ERR_INVALID_DATA;
             }
         };
@@ -298,9 +295,7 @@ impl Puppet3d {
         let skeleton = match &mut self.skeleton {
             Some(v) => v,
             None => {
-                logger.error(vstring!(
-                    "Skeleton was None while trying to a-pose. This is a bug!"
-                ));
+                logger.error("Skeleton was None while trying to a-pose. This is a bug!");
                 return Error::ERR_UNCONFIGURED;
             }
         };
@@ -312,15 +307,15 @@ impl Puppet3d {
 
         for bone_name in [L_SHOULDER, R_SHOULDER, L_UPPER_ARM, R_UPPER_ARM] {
             if !mappings.contains_key(bone_name) {
-                logger.error(vstring!(format!("humanoid_bone_mapping does not contain bone while trying to a-pose: {bone_name}")));
+                logger.error(format!("humanoid_bone_mapping does not contain bone while trying to a-pose: {bone_name}"));
                 continue;
             }
 
             let bone_idx = skeleton.find_bone(bone_name.into());
             if bone_idx < 0 {
-                logger.error(vstring!(format!(
+                logger.error(format!(
                     "Bone not found while trying to a-pose: {bone_name}"
-                )));
+                ));
                 continue;
             }
 
@@ -337,18 +332,23 @@ impl Puppet3d {
         Error::OK
     }
 
-    #[func]
-    fn visit_meow_face(&mut self, meow_face: Gd<crate::receivers::meow_face::MeowFace>) {
-        self.visit_meow_face_inner(&meow_face.bind().data);
+    #[func(rename = visit_meow_face)]
+    fn visit_meow_face_bound(&mut self, meow_face: Gd<crate::receivers::meow_face::MeowFace>) {
+        self.visit_meow_face(&meow_face.bind().data);
     }
 }
 
 impl super::Visitor for Puppet3d {
-    fn visit_mediapipe_inner(&mut self, _data: godot::prelude::Dictionary) {
+    fn visit_mediapipe(&mut self, _data: godot::prelude::Dictionary) {
         //
     }
 
-    fn visit_meow_face_inner(&mut self, data: &crate::receivers::meow_face::Data) {
-        //
+    fn visit_meow_face(&mut self, data: &crate::receivers::meow_face::Data) {
+        let skeleton = self.skeleton.as_mut().unwrap();
+        skeleton.set_bone_pose_position(self.head_bone_id, data.head_position);
+        skeleton.set_bone_pose_rotation(
+            self.head_bone_id,
+            Quaternion::from_euler(data.head_rotation),
+        );
     }
 }

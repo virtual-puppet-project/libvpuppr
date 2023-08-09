@@ -16,7 +16,7 @@ chrono = { version = "0.4", default-features = false, features = [
     "time",
     "serde",
 ] }
-godot = { git = "https://github.com/godot-rust/gdext", rev = "02823b4e80b126a84a9daaec93fe4d60338a8caa", features = [
+godot = { git = "https://github.com/you-win/gdext", rev = "e6480ef59514dac852e8d1a5aedfbcd6ab3f5083", features = [
     "serde",
 ] }
 once_cell = "1.18.0"
