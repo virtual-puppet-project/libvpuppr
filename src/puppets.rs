@@ -9,11 +9,11 @@ pub mod puppet_3d;
 /// IMPORTANT: Since mediapipe is implemented in a separate GDExtension, we cannot access
 /// any types from there. However, we can map that data to a `Dictionary` and visit that
 /// instead.
-pub(crate) trait Visitor {
-    fn visit_mediapipe(&mut self, _data: godot::prelude::Dictionary) {}
+// pub(crate) trait Visitor {
+//     fn visit_mediapipe(&mut self, _data: godot::prelude::Dictionary) {}
 
-    fn visit_meow_face(&mut self, _data: &crate::receivers::meow_face::Data) {}
-}
+//     fn visit_meow_face(&mut self, _data: &crate::receivers::meow_face::Data) {}
+// }
 
 // TODO unused until #[godot_api] supports multiple impls
 macro_rules! bind_visitor_to_godot {

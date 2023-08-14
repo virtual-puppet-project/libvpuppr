@@ -1,6 +1,7 @@
 mod logger;
 
 pub use logger::Logger;
+mod data_mappers;
 pub mod model;
 mod puppets;
 mod receivers;

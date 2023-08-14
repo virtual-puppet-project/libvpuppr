@@ -174,6 +174,11 @@ impl GodotReceiver<MeowFace> for MeowFace {
         }
         if let Err(e) = socket.set_read_timeout(Some(Duration::from_secs_f32(0.1))) {
             logger.error(format!("Unable to set read timeout for socket: {e}"));
+            return Error::ERR_CANT_CREATE;
+        }
+        if let Err(e) = socket.set_broadcast(true) {
+            logger.error(format!("Unable to set socket as broadcast: {e}"));
+            return Error::ERR_CANT_CREATE;
         }
         if let Err(e) = socket.connect(self.ip_address.unwrap()) {
             logger.error(format!(
@@ -187,9 +192,10 @@ impl GodotReceiver<MeowFace> for MeowFace {
         let (godot_sender, thread_receiver) = mpsc::channel::<()>();
 
         let thread_logger = self.logger.bind().clone();
-        let mut buf = Vec::with_capacity(1024);
+        // let mut buf = Vec::with_capacity(65536);
         let handle = std::thread::spawn(move || loop {
-            buf.clear();
+            // buf.clear();
+            let mut buf = [0; 65536];
 
             if let Ok(_) = thread_receiver.try_recv() {
                 break;

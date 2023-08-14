@@ -7,7 +7,7 @@ use godot::{
 
 use crate::{gstring, vstring, Logger};
 
-use super::Visitor;
+// use super::Visitor;
 
 /// Contains data necessary for manipulating blend shapes.
 #[derive(Debug)]
@@ -332,23 +332,23 @@ impl Puppet3d {
         Error::OK
     }
 
-    #[func(rename = visit_meow_face)]
-    fn visit_meow_face_bound(&mut self, meow_face: Gd<crate::receivers::meow_face::MeowFace>) {
-        self.visit_meow_face(&meow_face.bind().data);
-    }
+    // #[func(rename = visit_meow_face)]
+    // fn visit_meow_face_bound(&mut self, meow_face: Gd<crate::receivers::meow_face::MeowFace>) {
+    //     self.visit_meow_face(&meow_face.bind().data);
+    // }
 }
 
-impl super::Visitor for Puppet3d {
-    fn visit_mediapipe(&mut self, _data: godot::prelude::Dictionary) {
-        //
-    }
+// impl super::Visitor for Puppet3d {
+//     fn visit_mediapipe(&mut self, _data: godot::prelude::Dictionary) {
+//         //
+//     }
 
-    fn visit_meow_face(&mut self, data: &crate::receivers::meow_face::Data) {
-        let skeleton = self.skeleton.as_mut().unwrap();
-        skeleton.set_bone_pose_position(self.head_bone_id, data.head_position);
-        skeleton.set_bone_pose_rotation(
-            self.head_bone_id,
-            Quaternion::from_euler(data.head_rotation),
-        );
-    }
-}
+//     fn visit_meow_face(&mut self, data: &crate::receivers::meow_face::Data) {
+//         let skeleton = self.skeleton.as_mut().unwrap();
+//         skeleton.set_bone_pose_position(self.head_bone_id, data.head_position);
+//         skeleton.set_bone_pose_rotation(
+//             self.head_bone_id,
+//             Quaternion::from_euler(data.head_rotation),
+//         );
+//     }
+// }
