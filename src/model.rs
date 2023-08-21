@@ -1,3 +1,5 @@
+pub mod tracking_data;
+
 use std::path::PathBuf;
 
 use chrono::{serde::ts_seconds, DateTime, Utc};

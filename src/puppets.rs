@@ -1,22 +1,58 @@
-pub mod puppet_2d;
-pub mod puppet_3d;
+// pub mod puppet_2d;
+// pub mod puppet_3d;
 
-/// How to handle the various tracking data sources.
-///
-/// NOTE: this isn't _really_ a visitor since only the data is being passed along,
-/// but it's close enough.
-///
-/// IMPORTANT: Since mediapipe is implemented in a separate GDExtension, we cannot access
-/// any types from there. However, we can map that data to a `Dictionary` and visit that
-/// instead.
-// pub(crate) trait Visitor {
-//     fn visit_mediapipe(&mut self, _data: godot::prelude::Dictionary) {}
+pub mod glb_puppet;
+pub mod png_puppet;
+pub mod vrm_puppet;
 
-//     fn visit_meow_face(&mut self, _data: &crate::receivers::meow_face::Data) {}
-// }
+use godot::{
+    engine::{MeshInstance3D, Skeleton3D},
+    prelude::*,
+};
 
-// TODO unused until #[godot_api] supports multiple impls
-macro_rules! bind_visitor_to_godot {
-    () => {};
+use crate::{gstring, model::tracking_data::MeowFaceData, Logger};
+
+pub(crate) trait Puppet {
+    fn get_logger(&self) -> Logger;
 }
-pub(crate) use bind_visitor_to_godot;
+
+pub const SKELETON_NODE_NAME_3D: &str = "*Skeleton*";
+pub(crate) trait Puppet3d: Puppet {
+    fn find_skeleton(&self, base: &Base<Node3D>) -> Option<Gd<Skeleton3D>> {
+        if let Some(v) = base
+            .find_child_ex(gstring!(SKELETON_NODE_NAME_3D))
+            .owned(false)
+            .done()
+        {
+            v.try_cast::<Skeleton3D>()
+        } else {
+            self.get_logger().error("Unable to find skeleton node!");
+            None
+        }
+    }
+
+    fn handle_meow_face(&mut self, data: Gd<MeowFaceData>);
+}
+
+/// Contains data necessary for manipulating blend shapes.
+#[derive(Debug)]
+pub(crate) struct BlendShapeMapping {
+    /// The mesh the blend shape is associated with.
+    mesh: Gd<MeshInstance3D>,
+    /// The property path to the blend shape.
+    blend_shape_path: String,
+    /// The value of the blend shape, generally from 0.0-1.0.
+    value: f32,
+}
+
+impl BlendShapeMapping {
+    pub(crate) fn new(mesh: Gd<MeshInstance3D>, blend_shape_path: String, value: f32) -> Self {
+        Self {
+            mesh,
+            blend_shape_path,
+            value,
+        }
+    }
+}
+
+pub(crate) trait Puppet2d: Puppet {}
