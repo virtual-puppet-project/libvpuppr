@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use godot::{
-    engine::{global::Error, AnimationPlayer, ArrayMesh, MeshInstance3D, Skeleton3D},
+    engine::{global::Error, AnimationPlayer, ArrayMesh, BoneMap, MeshInstance3D, Skeleton3D},
     prelude::*,
 };
 
@@ -122,12 +122,12 @@ impl VrmFeatures {
                 };
 
                 // TODO this is probably unsafe?
-                let values = (
-                    animation.track_get_key_value(track_idx, 0).to::<f32>(),
-                    animation.track_get_key_value(track_idx, 1).to::<f32>(),
-                );
+                // let values = (
+                //     animation.track_get_key_value(track_idx, 0).to::<f32>(),
+                //     animation.track_get_key_value(track_idx, 1).to::<f32>(),
+                // );
 
-                morphs.push(MorphData::new(mesh, morph_name.to_string(), values));
+                // morphs.push(MorphData::new(mesh, morph_name.to_string(), values));
             }
 
             expression_data.insert(animation_name.to_string(), morphs);
@@ -167,7 +167,7 @@ pub struct VrmPuppet {
     // Intentionally not exposed
     vrm_features: VrmFeatures,
     #[var]
-    vrm_meta: Dictionary,
+    vrm_meta: Option<Gd<Resource>>,
 
     #[var]
     pub skeleton: Option<Gd<Skeleton3D>>,
@@ -198,7 +198,7 @@ impl Node3DVirtual for VrmPuppet {
 
             vrm_type: VrmType::Base,
             vrm_features: VrmFeatures::default(),
-            vrm_meta: Dictionary::new(),
+            vrm_meta: None,
 
             skeleton: None,
             head_bone: GodotString::new(),
@@ -303,7 +303,7 @@ impl Node3DVirtual for VrmPuppet {
         let vrm_meta = match self
             .managed_node()
             .get(VRM_META.into())
-            .try_to::<Dictionary>()
+            .try_to::<Gd<Resource>>()
         {
             Ok(v) => v,
             Err(e) => {
@@ -311,7 +311,7 @@ impl Node3DVirtual for VrmPuppet {
                 return;
             }
         };
-        self.vrm_meta.extend_dictionary(vrm_meta, true);
+        self.vrm_meta = Some(vrm_meta);
 
         self.vrm_features = match self.vrm_type {
             VrmType::Base => VrmFeatures::new_base(self),
@@ -327,28 +327,6 @@ impl VrmPuppet {
     pub fn a_pose(&mut self) -> Error {
         let logger = self.logger();
 
-        let vrm = &self.vrm_meta;
-
-        let mappings = match vrm.get("humanoid_bone_mapping") {
-            Some(v) => {
-                if v.get_type() != VariantType::Dictionary {
-                    logger.error("humanoid_bone_mapping was not a Dictionary");
-                    return Error::ERR_INVALID_DATA;
-                }
-                match v.try_to::<Dictionary>() {
-                    Ok(v) => v,
-                    Err(_) => {
-                        logger.error("Unable to convert humanoid_bone_mapping Variant to Dictionary, this is probably a godot-rust bug!");
-                        return Error::ERR_INVALID_DATA;
-                    }
-                }
-            }
-            None => {
-                logger.error("No humanoid_bone_mapping found on vrm_meta");
-                return Error::ERR_INVALID_DATA;
-            }
-        };
-
         let skeleton = match &mut self.skeleton {
             Some(v) => v,
             None => {
@@ -357,17 +335,12 @@ impl VrmPuppet {
             }
         };
 
-        const L_SHOULDER: &str = "leftShoulder";
-        const R_SHOULDER: &str = "rightShoulder";
-        const L_UPPER_ARM: &str = "leftUpperArm";
-        const R_UPPER_ARM: &str = "rightUpperArm";
+        const L_SHOULDER: &str = "LeftShoulder";
+        const R_SHOULDER: &str = "RightShoulder";
+        const L_UPPER_ARM: &str = "LeftUpperArm";
+        const R_UPPER_ARM: &str = "RightUpperArm";
 
         for bone_name in [L_SHOULDER, R_SHOULDER, L_UPPER_ARM, R_UPPER_ARM] {
-            if !mappings.contains_key(bone_name) {
-                logger.error(format!("humanoid_bone_mapping does not contain bone while trying to a-pose: {bone_name}"));
-                continue;
-            }
-
             let bone_idx = skeleton.find_bone(bone_name.into());
             if bone_idx < 0 {
                 logger.error(format!(
@@ -377,12 +350,29 @@ impl VrmPuppet {
             }
 
             let quat = match bone_name {
-                L_SHOULDER => Quaternion::new(0.0, 0.0, 0.1, 0.85),
-                R_SHOULDER => Quaternion::new(0.0, 0.0, -0.1, 0.85),
-                L_UPPER_ARM => Quaternion::new(0.0, 0.0, 0.4, 0.85),
-                R_UPPER_ARM => Quaternion::new(0.0, 0.0, -0.4, 0.85),
+                L_SHOULDER => {
+                    skeleton.get_bone_pose_rotation(bone_idx)
+                        * Quaternion::from_angle_axis(Vector3::LEFT, 0.34)
+                }
+
+                L_UPPER_ARM => {
+                    skeleton.get_bone_pose_rotation(bone_idx)
+                        * Quaternion::from_angle_axis(Vector3::RIGHT, 0.52)
+                }
+
+                R_SHOULDER => {
+                    skeleton.get_bone_pose_rotation(bone_idx)
+                        * Quaternion::from_angle_axis(Vector3::LEFT, 0.34)
+                }
+
+                R_UPPER_ARM => {
+                    skeleton.get_bone_pose_rotation(bone_idx)
+                        * Quaternion::from_angle_axis(Vector3::RIGHT, 0.52)
+                }
+
                 _ => unreachable!("This should never happen!"),
             };
+
             skeleton.set_bone_pose_rotation(bone_idx, quat);
         }
 
@@ -418,9 +408,6 @@ impl Puppet3d for VrmPuppet {
         let data = data.bind();
         let skeleton = self.skeleton.as_mut().unwrap();
 
-        // if let Some(position) = data.position {
-        //     skeleton.set_bone_pose_position(self.head_bone_id, position);
-        // }
         if let Some(rotation) = data.rotation {
             skeleton.set_bone_pose_rotation(
                 self.head_bone_id,
