@@ -32,6 +32,7 @@ impl From<GodotString> for GodotPath {
     }
 }
 
+/// Data for a runner.
 #[derive(Debug, Default, GodotClass, Serialize, Deserialize)]
 pub struct RunnerData {
     /// The name of the Runner Data. Should generally be set to the name of the model.
@@ -44,7 +45,7 @@ pub struct RunnerData {
     model_path: GodotPath,
     /// The path to the preview image for the runner.
     preview_path: GodotPath,
-    /// Whether the [RunnerData] should be listed as a favorite.
+    /// Whether the `RunnerData` should be listed as a favorite.
     is_favorite: bool,
     /// The last used time. Used for sorting runners.
     #[serde(with = "ts_seconds")]

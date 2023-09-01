@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use godot::{
-    engine::{global::Error, AnimationPlayer, ArrayMesh, BoneMap, MeshInstance3D, Skeleton3D},
+    engine::{
+        animation::TrackType, global::Error, AnimationPlayer, ArrayMesh, BoneMap, MeshInstance3D,
+        Skeleton3D,
+    },
     prelude::*,
 };
 
@@ -74,6 +77,14 @@ impl VrmFeatures {
             }
         };
 
+        let reset_anim = match anim_player.get_animation("RESET".into()) {
+            Some(v) => v,
+            None => {
+                logger.error("Unable to find RESET animation, bailing out!");
+                return Self::default();
+            }
+        };
+
         for animation_name in anim_player.get_animation_list().as_slice() {
             let animation = match anim_player.get_animation(animation_name.into()) {
                 Some(v) => v,
@@ -85,8 +96,8 @@ impl VrmFeatures {
 
             let mut morphs = vec![];
 
-            for track_idx in 0..animation.get_track_count() {
-                let track_name = animation.track_get_path(track_idx).to_string();
+            for to_track_idx in 0..animation.get_track_count() {
+                let track_name = animation.track_get_path(to_track_idx).to_string();
                 let (node_name, morph_name) = match track_name.split_once(":") {
                     Some(v) => v,
                     None => {
@@ -96,6 +107,20 @@ impl VrmFeatures {
                         continue;
                     }
                 };
+
+                if animation.get_track_count() != 1 {
+                    logger.info(format!("Animation {animation_name}:{track_name} does not have exactly 1 key, skipping!"));
+                    continue;
+                }
+
+                let from_track_idx =
+                    reset_anim.find_track(track_name.clone().into(), TrackType::TYPE_BLEND_SHAPE);
+                if from_track_idx < 0 {
+                    logger.info(format!(
+                        "Reset track does not contain {track_name}, skipping!"
+                    ));
+                    continue;
+                }
 
                 let mesh = match puppet.get_nested_node_or_null(NodePath::from(node_name)) {
                     Some(v) => {
@@ -121,10 +146,9 @@ impl VrmFeatures {
                     }
                 };
 
-                // TODO this is probably unsafe?
                 // let values = (
-                //     animation.track_get_key_value(track_idx, 0).to::<f32>(),
-                //     animation.track_get_key_value(track_idx, 1).to::<f32>(),
+                //     animation.track_get_key_value(from_track_idx, 0).to::<f32>(),
+                //     animation.track_get_key_value(to_track_idx, 0).to::<f32>(),
                 // );
 
                 // morphs.push(MorphData::new(mesh, morph_name.to_string(), values));
@@ -383,6 +407,11 @@ impl VrmPuppet {
     fn handle_meow_face_bound(&mut self, data: Gd<MeowFaceData>) {
         self.handle_meow_face(data)
     }
+
+    #[func(rename = handle_media_pipe)]
+    fn handle_media_pipe_bound(&mut self, projection: Projection, blend_shapes: Array<Variant>) {
+        self.handle_media_pipe(projection, blend_shapes);
+    }
 }
 
 impl Puppet for VrmPuppet {
@@ -414,6 +443,23 @@ impl Puppet3d for VrmPuppet {
                 Quaternion::from_euler(Vector3::new(rotation.y, rotation.x, rotation.z) * 0.02),
             );
         }
+
+        match &self.vrm_features {
+            VrmFeatures::Base {
+                left_eye_id,
+                right_eye_id,
+                expression_data,
+            } => {}
+            VrmFeatures::PerfectSync => {}
+        }
+    }
+
+    fn handle_media_pipe(&mut self, projection: Projection, blend_shapes: Array<Variant>) {
+        let skeleton = self.skeleton.as_mut().unwrap();
+
+        let tx = Transform3D::from_projection(projection);
+
+        skeleton.set_bone_pose_rotation(self.head_bone_id, tx.basis.to_quat());
 
         match &self.vrm_features {
             VrmFeatures::Base {

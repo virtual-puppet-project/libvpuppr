@@ -34,6 +34,8 @@ pub trait Puppet3d: Puppet {
     }
 
     fn handle_meow_face(&mut self, data: Gd<MeowFaceData>);
+
+    fn handle_media_pipe(&mut self, projection: Projection, blend_shapes: Array<Variant>);
 }
 
 /// Contains data necessary for manipulating blend shapes. Meant to be viewable by a user.
