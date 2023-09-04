@@ -116,9 +116,19 @@ impl VrmFeatures {
                 let from_track_idx =
                     reset_anim.find_track(track_name.clone().into(), TrackType::TYPE_BLEND_SHAPE);
                 if from_track_idx < 0 {
-                    logger.info(format!(
+                    logger.debug(format!(
                         "Reset track does not contain {track_name}, skipping!"
                     ));
+                    continue;
+                }
+
+                // TODO this seems to be hitting too many false positives
+                if animation.track_get_key_count(from_track_idx) < 1 {
+                    logger.debug(format!("Reset track does not contain a key, skipping!"));
+                    continue;
+                }
+                if animation.track_get_key_count(to_track_idx) < 1 {
+                    logger.debug(format!("{track_name} does not contain a key, skipping!"));
                     continue;
                 }
 
@@ -146,12 +156,12 @@ impl VrmFeatures {
                     }
                 };
 
-                // let values = (
-                //     animation.track_get_key_value(from_track_idx, 0).to::<f32>(),
-                //     animation.track_get_key_value(to_track_idx, 0).to::<f32>(),
-                // );
+                let values = (
+                    animation.track_get_key_value(from_track_idx, 0).to::<f32>(),
+                    animation.track_get_key_value(to_track_idx, 0).to::<f32>(),
+                );
 
-                // morphs.push(MorphData::new(mesh, morph_name.to_string(), values));
+                morphs.push(MorphData::new(mesh, morph_name.to_string(), values));
             }
 
             expression_data.insert(animation_name.to_string(), morphs);
@@ -341,6 +351,10 @@ impl Node3DVirtual for VrmPuppet {
             VrmType::Base => VrmFeatures::new_base(self),
             VrmType::PerfectSync => VrmFeatures::new_perfect_sync(self),
         };
+
+        if self.a_pose() != Error::OK {
+            logger.error("Unable to a-pose");
+        }
     }
 }
 

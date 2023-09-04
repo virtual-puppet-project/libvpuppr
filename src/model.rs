@@ -37,6 +37,8 @@ impl From<GodotString> for GodotPath {
 pub struct RunnerData {
     /// The name of the Runner Data. Should generally be set to the name of the model.
     name: String,
+    /// The Godot class name of the puppet to use. This is later instantiated via [`ClassDB`].
+    puppet_class: String,
     /// The path to the runner used for handling the model.
     runner_path: GodotPath,
     /// The path to the gui used in the runner.
@@ -132,6 +134,16 @@ impl RunnerData {
     #[func]
     fn set_name(&mut self, name: GodotString) {
         self.name = name.to_string()
+    }
+
+    #[func]
+    fn get_puppet_class(&self) -> GodotString {
+        self.puppet_class.clone().into()
+    }
+
+    #[func]
+    fn set_puppet_class(&mut self, puppet_class: GodotString) {
+        self.puppet_class = puppet_class.into();
     }
 
     #[func]
