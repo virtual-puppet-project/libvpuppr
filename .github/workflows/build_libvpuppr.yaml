@@ -1,0 +1,46 @@
+---
+name: Build libvpuppr
+on:
+  push:
+    branches:
+      - master
+  schedule:
+    # Every Monday at 0001
+    - cron: "1 0 * * 1"
+  workflow_dispatch:
+
+jobs:
+  build-libvpuppr:
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Cargo build
+        shell: bash
+        run: |
+          ./build.py --debug
+          ./build.py --release
+
+      - name: Linux upload debug
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: libvpuppr-linux-debug
+          path: ./target/debug/libvpuppr.so
+          retention-days: 7
+          if-no-files-found: error
+      - name: Windows upload debug
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: libvpuppr-windows-debug
+          path: ./target/debug/libvpuppr.dll
+          retention-days: 7
+          if-no-files-found: error

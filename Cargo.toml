@@ -10,13 +10,14 @@ authors = ["Tim Yuen<timothy.yuen22@gmail.com>"]
 crate-type = ["cdylib"]
 
 [dependencies]
+argh = "0.1.12"
 chrono = { version = "0.4", default-features = false, features = [
     "clock",
     "std",
     "time",
     "serde",
 ] }
-godot = { git = "https://github.com/you-win/gdext", rev = "e6480ef59514dac852e8d1a5aedfbcd6ab3f5083", features = [
+godot = { git = "https://github.com/you-win/gdext", rev = "9e6fe56ab251529ea1d91d6df0ca978b3ad1e22a", features = [
     "serde",
 ] }
 log = "0.4.20"
