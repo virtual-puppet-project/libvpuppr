@@ -1,12 +1,11 @@
 mod logger;
-
-pub use logger::Logger;
-// mod data_mappers;
 pub mod model;
 mod puppets;
-// mod receivers;
 
-use godot::prelude::*;
+use godot::{engine::global::Error, prelude::*};
+use log::LevelFilter;
+
+pub use logger::Logger;
 
 /// Easy [GodotString] creation. :lenny:
 macro_rules! gstring {
@@ -37,6 +36,44 @@ impl RefCountedVirtual for LibVpuppr {
 
 #[godot_api]
 impl LibVpuppr {
+    /// Initialize logging of Rust libraries.
+    ///
+    /// # Note
+    /// A new [String] must be allocated when printing, otherwise Godot is not
+    /// able to print anything.
+    #[func]
+    fn init_rust_log() -> Error {
+        match youlog::Youlog::new_from_default_env()
+            .global_level(LevelFilter::Debug)
+            .log_fn(LevelFilter::Info, |r| {
+                Logger::global(LevelFilter::Info, r.target(), r.args().to_string().as_str());
+            })
+            .log_fn(LevelFilter::Warn, |r| {
+                godot_warn!("{}", r.args().to_string().as_str());
+                Logger::global(LevelFilter::Warn, r.target(), r.args().to_string().as_str());
+            })
+            .log_fn(LevelFilter::Error, |r| {
+                godot_error!("{}", r.args().to_string().as_str());
+                Logger::global(
+                    LevelFilter::Error,
+                    r.target(),
+                    r.args().to_string().as_str(),
+                );
+            })
+            .log_fn(LevelFilter::Debug, |r| {
+                Logger::global(
+                    LevelFilter::Debug,
+                    r.target(),
+                    r.args().to_string().as_str(),
+                );
+            })
+            .init()
+        {
+            Ok(_) => Error::OK,
+            Err(_) => Error::ERR_UNCONFIGURED,
+        }
+    }
+
     /// A mapping of various vpuppr metadata.
     #[func]
     fn metadata() -> Dictionary {

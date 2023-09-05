@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use godot::{engine::ProjectSettings, prelude::*};
+use log::LevelFilter;
 use once_cell::sync::Lazy;
 
 const MAX_LOGS: usize = 128;
@@ -64,6 +65,19 @@ enum LogLevel {
     Global,
 }
 
+impl From<LevelFilter> for LogLevel {
+    fn from(value: LevelFilter) -> Self {
+        match value {
+            LevelFilter::Off => unreachable!(),
+            LevelFilter::Error => LogLevel::Error,
+            LevelFilter::Warn => LogLevel::Warn,
+            LevelFilter::Info => LogLevel::Info,
+            LevelFilter::Debug => LogLevel::Debug,
+            LevelFilter::Trace => LogLevel::Debug,
+        }
+    }
+}
+
 /// A structured logger that helps work around Godot dropping logs when it crashes.
 #[derive(Debug, Clone, GodotClass)]
 pub struct Logger {
@@ -120,14 +134,11 @@ impl Logger {
     /// Send a log using an anonymous logger. Logs are printed to stdout.
     #[func(rename = global)]
     pub fn global_bound(source: GodotString, message: Variant) {
-        let message = insert_metadata(
+        Logger::global(
+            LevelFilter::Info,
             source.to_string(),
-            &LogLevel::Global,
-            &mut message.stringify().to_string(),
+            message.stringify().to_string(),
         );
-
-        godot_print!("{message}");
-        add_to_log_store(message);
     }
 }
 
@@ -181,13 +192,18 @@ impl Logger {
         self.log(LogLevel::Debug, &mut message);
     }
 
-    pub fn global<T>(source: T, message: T)
+    pub fn global<T>(level: LevelFilter, source: T, message: T)
     where
         T: std::fmt::Display,
     {
-        let message = insert_metadata(source.to_string(), &LogLevel::Global, message);
+        let message = insert_metadata(source.to_string(), &level.into(), message);
 
-        godot_print!("{message}");
+        match level {
+            LevelFilter::Error => godot_error!("{message}"),
+            LevelFilter::Warn => godot_warn!("{message}"),
+            LevelFilter::Info | LevelFilter::Debug => godot_print!("{message}"),
+            _ => {}
+        }
         add_to_log_store(message);
     }
 }

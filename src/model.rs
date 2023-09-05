@@ -1,12 +1,13 @@
 pub mod tracking_data;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use godot::{
     engine::{global::Error, ProjectSettings},
     prelude::*,
 };
+use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 
 use crate::Logger;
@@ -29,6 +30,142 @@ impl std::ops::Deref for GodotPath {
 impl From<GodotString> for GodotPath {
     fn from(value: GodotString) -> Self {
         Self(value.to_string())
+    }
+}
+
+// trait SaveFile {
+//     fn file_name() -> String;
+
+//     fn try_save(&self) -> Error {
+
+//     }
+// }
+
+#[derive(Debug, Default, GodotClass, Serialize, Deserialize)]
+pub struct Metadata {
+    known_runner_data: Vec<PathBuf>,
+}
+
+#[godot_api]
+impl RefCountedVirtual for Metadata {
+    fn init(_base: godot::obj::Base<Self::Base>) -> Self {
+        Self::default()
+    }
+}
+
+#[godot_api]
+impl Metadata {
+    #[func]
+    fn try_save(&self) -> Error {
+        let path: PathBuf = ProjectSettings::singleton()
+            .globalize_path(format!("user://{}", "metadata.tot").into())
+            .to_string()
+            .into();
+
+        let contents = match tot::to_string(&self) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Unable to convert RunnerData to string: {e}");
+
+                return Error::ERR_INVALID_DATA;
+            }
+        };
+
+        match std::fs::write(path, contents) {
+            Ok(_) => Error::OK,
+            Err(e) => {
+                error!("Unable to save RunnerData: {e}");
+                Error::ERR_FILE_CANT_WRITE
+            }
+        }
+    }
+
+    #[func]
+    fn try_load() -> Variant {
+        let path: PathBuf = ProjectSettings::singleton()
+            .globalize_path("user://metadata.tot".into())
+            .to_string()
+            .into();
+
+        if let Ok(v) = std::fs::read_to_string(&path) {
+            if let Ok(v) = tot::from_str::<Metadata>(v.as_str()) {
+                return Gd::new(v).to_variant();
+            }
+        }
+
+        error!("Unable to load runner data from path {path:?}");
+
+        Variant::nil()
+    }
+
+    #[func]
+    pub fn scan(&mut self, path: GodotString) -> Error {
+        debug!("Scanning for data");
+
+        let path = ProjectSettings::singleton()
+            .globalize_path(path)
+            .to_string();
+        let path = Path::new(&path);
+
+        info!("Scanning for data at path {path:?}");
+
+        let mut found_files = vec![];
+        match std::fs::read_dir(path) {
+            Ok(v) => {
+                for entry in v.into_iter() {
+                    if let Ok(entry) = entry {
+                        let file_name = entry
+                            .file_name()
+                            .to_str()
+                            .unwrap_or_default()
+                            .to_lowercase();
+                        if Path::new(&file_name).ends_with("tot") {
+                            debug!("Found file {file_name}");
+                            found_files.push(file_name.into());
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                error!("{e}");
+                return Error::ERR_CANT_OPEN;
+            }
+        }
+
+        self.known_runner_data = found_files;
+
+        Error::OK
+    }
+
+    /// Tries to load and return all known [RunnerData].
+    #[func]
+    fn get_known_runner_data(&mut self) -> Array<Gd<RunnerData>> {
+        let mut runner_data = Array::new();
+        let mut missing_data = vec![];
+
+        for path in self.known_runner_data.iter() {
+            let data = RunnerData::try_load(GodotString::from(path.to_str().unwrap_or_default()));
+            if data.is_nil() {
+                error!("Unable to load RunnerData from {path:?}, removing from Metadata");
+                missing_data.push(path.clone());
+                continue;
+            }
+
+            match data.try_to::<Gd<RunnerData>>() {
+                Ok(v) => runner_data.push(v),
+                Err(_) => {
+                    error!(
+                        "Unable to convert RunnerData variant to concrete RunnerData, skipping!"
+                    );
+                    continue;
+                }
+            }
+        }
+
+        self.known_runner_data
+            .retain(|v| !missing_data.contains(&v));
+
+        runner_data
     }
 }
 
@@ -80,10 +217,7 @@ impl RunnerData {
             }
         }
 
-        Logger::global(
-            "RunnerData",
-            &format!("Unable to load runner data from path {path:?}"),
-        );
+        error!("Unable to load runner data from path {path:?}");
 
         Variant::nil()
     }
@@ -102,10 +236,7 @@ impl RunnerData {
         let contents = match tot::to_string(&self) {
             Ok(v) => v,
             Err(e) => {
-                Logger::global(
-                    "RunnerData",
-                    &format!("Unable to convert RunnerData to string: {e}"),
-                );
+                error!("Unable to convert RunnerData to string: {e}");
 
                 return Error::ERR_INVALID_DATA;
             }
@@ -114,7 +245,7 @@ impl RunnerData {
         match std::fs::write(path, contents) {
             Ok(_) => Error::OK,
             Err(e) => {
-                Logger::global("source", &format!("Unable to save RunnerData: {e}"));
+                error!("Unable to save RunnerData: {e}");
                 Error::ERR_FILE_CANT_WRITE
             }
         }

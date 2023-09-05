@@ -1,11 +1,10 @@
 use godot::prelude::*;
+use log::error;
 use serde::{Deserialize, Serialize};
-
-use crate::Logger;
 
 trait TrackingData<T: Default> {
     fn from_bytes(_data: PackedByteArray) -> T {
-        Logger::global("TrackingData", "from not yet implemented");
+        error!("from not yet implemented");
         T::default()
     }
 }
