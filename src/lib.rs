@@ -85,11 +85,9 @@ impl LibVpuppr {
                 Logger::global(LevelFilter::Info, r.target(), r.args().to_string().as_str());
             })
             .log_fn(LevelFilter::Warn, |r| {
-                godot_warn!("{}", r.args().to_string().as_str());
                 Logger::global(LevelFilter::Warn, r.target(), r.args().to_string().as_str());
             })
             .log_fn(LevelFilter::Error, |r| {
-                godot_error!("{}", r.args().to_string().as_str());
                 Logger::global(
                     LevelFilter::Error,
                     r.target(),
