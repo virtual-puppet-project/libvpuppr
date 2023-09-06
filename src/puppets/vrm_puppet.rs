@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use godot::{
     engine::{
-        animation::TrackType, global::Error, AnimationPlayer, ArrayMesh, BoneMap, MeshInstance3D,
-        Skeleton3D,
+        animation::TrackType, global::Error, AnimationPlayer, ArrayMesh, MeshInstance3D, Skeleton3D,
     },
     prelude::*,
 };
@@ -187,32 +186,32 @@ pub struct VrmPuppet {
     pub logger: Gd<Logger>,
 
     #[base]
-    base: Base<Node3D>,
+    pub base: Base<Node3D>,
 
     #[var]
-    blink_threshold: f32,
+    pub blink_threshold: f32,
     #[var]
-    link_eye_blinks: bool,
+    pub link_eye_blinks: bool,
     #[var]
-    use_raw_eye_rotation: bool,
+    pub use_raw_eye_rotation: bool,
 
     #[var]
-    vrm_type: VrmType,
+    pub vrm_type: VrmType,
     // Intentionally not exposed
     vrm_features: VrmFeatures,
     #[var]
-    vrm_meta: Option<Gd<Resource>>,
+    pub vrm_meta: Option<Gd<Resource>>,
 
     #[var]
     pub skeleton: Option<Gd<Skeleton3D>>,
     #[var]
-    head_bone: GodotString,
+    pub head_bone: GodotString,
     #[var]
     pub head_bone_id: i32,
     #[var]
     pub additional_movement_bones: Array<i32>,
     #[var]
-    initial_bone_poses: Dictionary,
+    pub initial_bone_poses: Dictionary,
 
     /// Used for manually manipulating each blend shape.
     blend_shape_mappings: HashMap<String, BlendShapeMapping>,
@@ -468,7 +467,7 @@ impl Puppet3d for VrmPuppet {
         }
     }
 
-    fn handle_media_pipe(&mut self, projection: Projection, blend_shapes: Array<Variant>) {
+    fn handle_media_pipe(&mut self, projection: Projection, _blend_shapes: Array<Variant>) {
         let skeleton = self.skeleton.as_mut().unwrap();
 
         let tx = Transform3D::from_projection(projection);
