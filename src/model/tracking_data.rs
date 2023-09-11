@@ -10,7 +10,6 @@ trait TrackingData<T: Default> {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, GodotClass)]
-#[class(base = RefCounted)]
 pub struct MeowFaceData {
     #[serde(rename = "Rotation")]
     pub rotation: Option<Vector3>,

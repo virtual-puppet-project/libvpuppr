@@ -7,7 +7,11 @@ use godot::{
     prelude::*,
 };
 
-use crate::{gstring, model::tracking_data::MeowFaceData, Logger};
+use crate::{
+    gstring,
+    model::{self, tracking_data::MeowFaceData},
+    Logger,
+};
 
 use super::{BlendShapeMapping, MorphData, Puppet, Puppet3d};
 
@@ -16,10 +20,28 @@ const MESH_INST_3D: &str = "MeshInstance3D";
 const VRM_META: &str = "vrm_meta";
 
 #[repr(i64)]
-#[derive(Debug, Property)]
+#[derive(Debug, Clone, Copy, Property, Export)]
 pub enum VrmType {
     Base = 0,
     PerfectSync = 1,
+}
+
+impl From<model::puppet::VrmType> for VrmType {
+    fn from(value: model::puppet::VrmType) -> Self {
+        match value {
+            model::puppet::VrmType::Base => Self::Base,
+            model::puppet::VrmType::PerfectSync => Self::PerfectSync,
+        }
+    }
+}
+
+impl Into<model::puppet::VrmType> for VrmType {
+    fn into(self) -> model::puppet::VrmType {
+        match self {
+            VrmType::Base => model::puppet::VrmType::Base,
+            VrmType::PerfectSync => model::puppet::VrmType::PerfectSync,
+        }
+    }
 }
 
 /// Possible ways a VRM model should be handled.
@@ -181,6 +203,26 @@ impl VrmFeatures {
 
 #[derive(Debug, GodotClass)]
 #[class(base = Node3D)]
+// Puppet3d
+#[property(name = head_bone, type = GodotString, get = get_head_bone, set = set_head_bone)]
+#[property(name = head_bone_id, type = GodotString, get = get_head_bone_id, set = set_head_bone_id)]
+#[property(
+    name = additional_movement_bones,
+    type = Array<i32>,
+    get = get_additional_movement_bones,
+    set = set_additional_movement_bones,
+)]
+#[property(
+    name = initial_bone_poses,
+    type = Dictionary,
+    get = get_initial_bone_poses,
+    set = set_initial_bone_poses
+)]
+// VrmPuppet
+#[property(name = blink_threshold, type = f32, get = get_blink_threshold, set = set_blink_threshold)]
+#[property(name = link_eye_blinks, type = bool, get = get_link_eye_blinks, set = set_link_eye_blinks)]
+#[property(name = use_raw_eye_rotation, type = bool, get = get_use_raw_eye_rotation, set = set_use_raw_eye_rotation)]
+// #[property(name = vrm_type, type = VrmType, get = get_vrm_type, set = set_vrm_type)]
 pub struct VrmPuppet {
     #[var]
     pub logger: Gd<Logger>,
@@ -188,15 +230,9 @@ pub struct VrmPuppet {
     #[base]
     pub base: Base<Node3D>,
 
-    #[var]
-    pub blink_threshold: f32,
-    #[var]
-    pub link_eye_blinks: bool,
-    #[var]
-    pub use_raw_eye_rotation: bool,
+    pub puppet3d: model::puppet::Puppet3d,
+    pub vrm_puppet: model::puppet::VrmPuppet,
 
-    #[var]
-    pub vrm_type: VrmType,
     // Intentionally not exposed
     vrm_features: VrmFeatures,
     #[var]
@@ -204,14 +240,6 @@ pub struct VrmPuppet {
 
     #[var]
     pub skeleton: Option<Gd<Skeleton3D>>,
-    #[var]
-    pub head_bone: GodotString,
-    #[var]
-    pub head_bone_id: i32,
-    #[var]
-    pub additional_movement_bones: Array<i32>,
-    #[var]
-    pub initial_bone_poses: Dictionary,
 
     /// Used for manually manipulating each blend shape.
     blend_shape_mappings: HashMap<String, BlendShapeMapping>,
@@ -225,19 +253,13 @@ impl Node3DVirtual for VrmPuppet {
 
             base,
 
-            blink_threshold: 0.0,
-            link_eye_blinks: false,
-            use_raw_eye_rotation: false,
+            puppet3d: model::puppet::Puppet3d::default(),
+            vrm_puppet: model::puppet::VrmPuppet::default(),
 
-            vrm_type: VrmType::Base,
             vrm_features: VrmFeatures::default(),
             vrm_meta: None,
 
             skeleton: None,
-            head_bone: GodotString::new(),
-            head_bone_id: -1,
-            additional_movement_bones: Array::new(),
-            initial_bone_poses: Dictionary::new(),
 
             blend_shape_mappings: HashMap::new(),
         }
@@ -260,8 +282,8 @@ impl Node3DVirtual for VrmPuppet {
 
         let skeleton = self.skeleton.as_ref().unwrap();
 
-        self.head_bone_id = skeleton.find_bone(self.head_bone.clone());
-        if self.head_bone_id < 0 {
+        self.puppet3d.head_bone_id = skeleton.find_bone(self.puppet3d.head_bone.clone().into());
+        if self.puppet3d.head_bone_id < 0 {
             logger.error("No head bone found!");
             return;
         }
@@ -270,7 +292,9 @@ impl Node3DVirtual for VrmPuppet {
 
         // This must be done after loading the user's custom rest pose
         for i in 0..skeleton.get_bone_count() {
-            self.initial_bone_poses.insert(i, skeleton.get_bone_pose(i));
+            self.puppet3d
+                .initial_bone_poses
+                .insert(i, skeleton.get_bone_pose(i));
         }
 
         // Pre-allocate the name here and then clone it in the loop
@@ -346,9 +370,9 @@ impl Node3DVirtual for VrmPuppet {
         };
         self.vrm_meta = Some(vrm_meta);
 
-        self.vrm_features = match self.vrm_type {
-            VrmType::Base => VrmFeatures::new_base(self),
-            VrmType::PerfectSync => VrmFeatures::new_perfect_sync(self),
+        self.vrm_features = match self.vrm_puppet.vrm_type {
+            model::puppet::VrmType::Base => VrmFeatures::new_base(self),
+            model::puppet::VrmType::PerfectSync => VrmFeatures::new_perfect_sync(self),
         };
 
         if self.a_pose() != Error::OK {
@@ -416,13 +440,111 @@ impl VrmPuppet {
         Error::OK
     }
 
+    #[func]
+    fn get_head_bone(&self) -> GodotString {
+        self.puppet3d.head_bone.clone().into()
+    }
+
+    #[func]
+    fn set_head_bone(&mut self, head_bone: GodotString) {
+        self.puppet3d.head_bone = head_bone.into();
+    }
+
+    #[func]
+    fn get_head_bone_id(&self) -> i32 {
+        self.puppet3d.head_bone_id
+    }
+
+    #[func]
+    fn set_head_bone_id(&mut self, head_bone_id: i32) {
+        self.puppet3d.head_bone_id = head_bone_id
+    }
+
+    #[func]
+    fn get_additional_movement_bones(&self) -> Array<i32> {
+        self.puppet3d
+            .additional_movement_bones
+            .iter()
+            .map(|v| v.clone())
+            .collect::<Array<i32>>()
+    }
+
+    #[func]
+    fn set_additional_movement_bones(&mut self, additional_movement_bones: Array<i32>) {
+        self.puppet3d.additional_movement_bones = additional_movement_bones
+            .iter_shared()
+            .collect::<Vec<i32>>();
+    }
+
+    #[func]
+    fn get_initial_bone_poses(&self) -> Dictionary {
+        self.puppet3d
+            .initial_bone_poses
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<Dictionary>()
+    }
+
+    #[func]
+    fn set_initial_bone_poses(&mut self, initial_bone_poses: Dictionary) {
+        self.puppet3d.initial_bone_poses = initial_bone_poses
+            .iter_shared()
+            .map(|(k, v)| {
+                (
+                    k.try_to::<i32>().unwrap_or_default(),
+                    v.try_to::<Transform3D>().unwrap_or_default(),
+                )
+            })
+            .collect::<HashMap<i32, Transform3D>>();
+    }
+
+    #[func]
+    fn get_blink_threshold(&self) -> f32 {
+        self.vrm_puppet.blink_threshold
+    }
+
+    #[func]
+    fn set_blink_threshold(&mut self, blink_threshold: f32) {
+        self.vrm_puppet.blink_threshold = blink_threshold;
+    }
+
+    #[func]
+    fn get_link_eye_blinks(&self) -> bool {
+        self.vrm_puppet.link_eye_blinks
+    }
+
+    #[func]
+    fn set_link_eye_blinks(&mut self, link_eye_blinks: bool) {
+        self.vrm_puppet.link_eye_blinks = link_eye_blinks;
+    }
+
+    #[func]
+    fn get_use_raw_eye_rotation(&self) -> bool {
+        self.vrm_puppet.use_raw_eye_rotation
+    }
+
+    #[func]
+    fn set_use_raw_eye_rotation(&mut self, use_raw_eye_rotation: bool) {
+        self.vrm_puppet.use_raw_eye_rotation = use_raw_eye_rotation;
+    }
+
+    // #[func]
+    // fn get_vrm_type(&self) -> VrmType {
+    //     self.vrm_puppet.vrm_type.into()
+    // }
+
+    // #[func]
+    // fn set_vrm_type(&mut self, vrm_type: VrmType) {
+    //     self.vrm_puppet.vrm_type = vrm_type.into();
+    // }
+
     #[func(rename = handle_meow_face)]
     fn handle_meow_face_bound(&mut self, data: Gd<MeowFaceData>) {
         self.handle_meow_face(data)
     }
 
     #[func(rename = handle_media_pipe)]
-    fn handle_media_pipe_bound(&mut self, projection: Projection, blend_shapes: Array<Variant>) {
+    fn handle_media_pipe_bound(&mut self, projection: Projection, blend_shapes: Dictionary) {
         self.handle_media_pipe(projection, blend_shapes);
     }
 }
@@ -452,7 +574,7 @@ impl Puppet3d for VrmPuppet {
 
         if let Some(rotation) = data.rotation {
             skeleton.set_bone_pose_rotation(
-                self.head_bone_id,
+                self.puppet3d.head_bone_id,
                 Quaternion::from_euler(Vector3::new(rotation.y, rotation.x, rotation.z) * 0.02),
             );
         }
@@ -467,12 +589,12 @@ impl Puppet3d for VrmPuppet {
         }
     }
 
-    fn handle_media_pipe(&mut self, projection: Projection, _blend_shapes: Array<Variant>) {
+    fn handle_media_pipe(&mut self, projection: Projection, blend_shapes: Dictionary) {
         let skeleton = self.skeleton.as_mut().unwrap();
 
-        let tx = Transform3D::from_projection(projection);
+        let tx = Transform3D::from_projection(projection.inverse());
 
-        skeleton.set_bone_pose_rotation(self.head_bone_id, tx.basis.to_quat());
+        skeleton.set_bone_pose_rotation(self.puppet3d.head_bone_id, tx.basis.to_quat());
 
         match &self.vrm_features {
             VrmFeatures::Base {

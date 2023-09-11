@@ -146,7 +146,17 @@ impl Node3DVirtual for GlbPuppet {
 }
 
 #[godot_api]
-impl GlbPuppet {}
+impl GlbPuppet {
+    #[func(rename = handle_meow_face)]
+    fn handle_meow_face_bound(&mut self, data: Gd<MeowFaceData>) {
+        self.handle_meow_face(data)
+    }
+
+    #[func(rename = handle_media_pipe)]
+    fn handle_media_pipe_bound(&mut self, projection: Projection, blend_shapes: Dictionary) {
+        self.handle_media_pipe(projection, blend_shapes);
+    }
+}
 
 impl Puppet for GlbPuppet {
     fn logger(&self) -> Logger {
@@ -179,7 +189,7 @@ impl Puppet3d for GlbPuppet {
         }
     }
 
-    fn handle_media_pipe(&mut self, projection: Projection, _blend_shapes: Array<Variant>) {
+    fn handle_media_pipe(&mut self, projection: Projection, _blend_shapes: Dictionary) {
         let skeleton = self.skeleton.as_mut().unwrap();
 
         let tx = Transform3D::from_projection(projection);

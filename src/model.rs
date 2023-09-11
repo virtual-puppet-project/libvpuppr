@@ -1,3 +1,4 @@
+pub mod puppet;
 pub mod tracking_data;
 
 use std::{
@@ -193,6 +194,14 @@ impl Metadata {
 
 /// Data for a runner.
 #[derive(Debug, Default, GodotClass, Serialize, Deserialize)]
+#[property(name = name, type = GodotString, get = get_name, set = set_name)]
+#[property(name = puppet_class, type = GodotString, get = get_puppet_class, set = set_puppet_class)]
+#[property(name = runner_path, type = GodotString, get = get_runner_path, set = set_runner_path)]
+#[property(name = gui_path, type = GodotString, get = get_gui_path, set = set_gui_path)]
+#[property(name = model_path, type = GodotString, get = get_model_path, set = set_model_path)]
+#[property(name = preview_path, type = GodotString, get = get_preview_path, set = set_preview_path)]
+#[property(name = is_favorite, type = GodotString, get = get_is_favorite, set = set_is_favorite)]
+#[property(name = last_used, type = GodotString, get = get_last_used_int)]
 pub struct RunnerData {
     /// The name of the Runner Data. Should generally be set to the name of the model.
     name: String,

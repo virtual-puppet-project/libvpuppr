@@ -35,7 +35,8 @@ pub trait Puppet3d: Puppet {
 
     fn handle_meow_face(&mut self, data: Gd<MeowFaceData>);
 
-    fn handle_media_pipe(&mut self, projection: Projection, blend_shapes: Array<Variant>);
+    // TODO you-win Sept 10, 2023: Godot is not able to send GDMP types over the wire
+    fn handle_media_pipe(&mut self, projection: Projection, blend_shapes: Dictionary);
 }
 
 /// Contains data necessary for manipulating blend shapes. Meant to be viewable by a user.
