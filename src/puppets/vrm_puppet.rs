@@ -6,6 +6,7 @@ use godot::{
     },
     prelude::*,
 };
+use log::{debug, error, info};
 
 use crate::{
     gstring,
@@ -73,134 +74,6 @@ impl Default for VrmFeatures {
     }
 }
 
-impl VrmFeatures {
-    fn new_base(puppet: &mut VrmPuppet) -> Self {
-        let logger = puppet.logger();
-
-        let mut expression_data = HashMap::new();
-
-        let anim_player = match puppet
-            .base
-            .find_child_ex(ANIM_PLAYER.into())
-            .owned(false)
-            .done()
-        {
-            Some(v) => match v.try_cast::<AnimationPlayer>() {
-                Some(v) => v,
-                None => {
-                    logger.error("Unable to cast node to Animation Player, bailing out early!");
-                    return Self::default();
-                }
-            },
-            None => {
-                logger.error("Unable to find Animation Player, bailing out early!");
-                return Self::default();
-            }
-        };
-
-        let reset_anim = match anim_player.get_animation("RESET".into()) {
-            Some(v) => v,
-            None => {
-                logger.error("Unable to find RESET animation, bailing out!");
-                return Self::default();
-            }
-        };
-
-        for animation_name in anim_player.get_animation_list().as_slice() {
-            let animation = match anim_player.get_animation(animation_name.into()) {
-                Some(v) => v,
-                None => {
-                    logger.error("Unable to get animation while setting up, this is a serious bug. Bailing out!");
-                    return Self::default();
-                }
-            };
-
-            let mut morphs = vec![];
-
-            for to_track_idx in 0..animation.get_track_count() {
-                let track_name = animation.track_get_path(to_track_idx).to_string();
-                let (node_name, morph_name) = match track_name.split_once(":") {
-                    Some(v) => v,
-                    None => {
-                        logger.error(format!(
-                            "Unable to split track {track_name}, this is slightly unexpected"
-                        ));
-                        continue;
-                    }
-                };
-
-                if animation.get_track_count() != 1 {
-                    logger.info(format!("Animation {animation_name}:{track_name} does not have exactly 1 key, skipping!"));
-                    continue;
-                }
-
-                let from_track_idx =
-                    reset_anim.find_track(track_name.clone().into(), TrackType::TYPE_BLEND_SHAPE);
-                if from_track_idx < 0 {
-                    logger.debug(format!(
-                        "Reset track does not contain {track_name}, skipping!"
-                    ));
-                    continue;
-                }
-
-                // TODO this seems to be hitting too many false positives
-                if animation.track_get_key_count(from_track_idx) < 1 {
-                    logger.debug(format!("Reset track does not contain a key, skipping!"));
-                    continue;
-                }
-                if animation.track_get_key_count(to_track_idx) < 1 {
-                    logger.debug(format!("{track_name} does not contain a key, skipping!"));
-                    continue;
-                }
-
-                let mesh = match puppet.get_nested_node_or_null(NodePath::from(node_name)) {
-                    Some(v) => {
-                        if !v.is_class(MESH_INST_3D.into()) {
-                            continue;
-                        }
-
-                        match v.try_cast::<MeshInstance3D>() {
-                            Some(v) => v,
-                            None => {
-                                logger.error(format!(
-                                    "Unable to cast {node_name} to mesh instance, bailing out!"
-                                ));
-                                return Self::default();
-                            }
-                        }
-                    }
-                    None => {
-                        logger.error(format!(
-                            "Unable to find mesh instance for {node_name}, bailing out!"
-                        ));
-                        return Self::default();
-                    }
-                };
-
-                let values = (
-                    animation.track_get_key_value(from_track_idx, 0).to::<f32>(),
-                    animation.track_get_key_value(to_track_idx, 0).to::<f32>(),
-                );
-
-                morphs.push(MorphData::new(mesh, morph_name.to_string(), values));
-            }
-
-            expression_data.insert(animation_name.to_string(), morphs);
-        }
-
-        // TODO find eye id values
-        Self::Base {
-            left_eye_id: 0,
-            right_eye_id: 0,
-            expression_data,
-        }
-    }
-
-    fn new_perfect_sync(_puppet: &mut VrmPuppet) -> Self {
-        Self::PerfectSync
-    }
-}
-
 #[derive(Debug, GodotClass)]
 #[class(base = Node3D)]
 // Puppet3d
@@ -243,6 +116,7 @@ pub struct VrmPuppet {
 
     /// Used for manually manipulating each blend shape.
     blend_shape_mappings: HashMap<String, BlendShapeMapping>,
+    expression_mappings: HashMap<String, Vec<String>>,
 }
 
 #[godot_api]
@@ -262,6 +136,7 @@ impl Node3DVirtual for VrmPuppet {
             skeleton: None,
 
             blend_shape_mappings: HashMap::new(),
+            expression_mappings: HashMap::new(),
         }
     }
 
@@ -275,7 +150,7 @@ impl Node3DVirtual for VrmPuppet {
                 let _ = self.skeleton.replace(v);
             }
             None => {
-                logger.error("Unable to cast to Skeleton3D, bailing out early!");
+                logger.error("Unable to find skeleton, bailing out early!");
                 return;
             }
         }
@@ -297,64 +172,11 @@ impl Node3DVirtual for VrmPuppet {
                 .insert(i, skeleton.get_bone_pose(i));
         }
 
-        // Pre-allocate the name here and then clone it in the loop
-        let mesh_instance_3d_name = StringName::from(MESH_INST_3D);
-
-        // Populating the blend shape mappings is extremely verbose
-        for child in skeleton.get_children().iter_shared() {
-            // Used for debugging only
-            let child_name = child.get_name();
-
-            if !child.is_class(mesh_instance_3d_name.clone().into()) {
-                logger.debug(format!(
-                    "Child {child_name} was not a MeshInstance3D, skipping"
-                ));
-                continue;
-            }
-
-            let child = child.try_cast::<MeshInstance3D>();
-            if child.is_none() {
-                logger.error(
-                    format!("Skeleton child {child_name} was a MeshInstance3D but was unable to cast to MeshInstance3D")
-                );
-                continue;
-            }
-
-            let child = child.unwrap();
-            let mesh = match child.get_mesh() {
-                Some(v) => v,
-                None => {
-                    logger.error(format!(
-                        "Unable to get mesh from MeshInstance3D {child_name}, skipping"
-                    ));
-                    continue;
-                }
-            };
-            let mesh = match mesh.try_cast::<ArrayMesh>() {
-                Some(v) => v,
-                None => {
-                    logger.error(format!(
-                        "Unable to convert mesh from {child_name} into ArrayMesh, skipping"
-                    ));
-                    continue;
-                }
-            };
-
-            for i in 0..mesh.get_blend_shape_count() {
-                let blend_shape_name = mesh.get_blend_shape_name(i).to_string();
-                let blend_shape_property_path = format!("blend_shapes/{}", blend_shape_name);
-                let value = child.get_blend_shape_value(i);
-
-                self.blend_shape_mappings.insert(
-                    blend_shape_name.clone(),
-                    BlendShapeMapping::new(
-                        // TODO this seems strange
-                        Gd::from_instance_id(child.instance_id()),
-                        blend_shape_property_path,
-                        value,
-                    ),
-                );
-            }
+        populate_blend_shape_mappings(&mut self.blend_shape_mappings, skeleton);
+        if let Some(v) = self.find_animation_player() {
+            populate_and_modify_expression_mappings(&mut self.expression_mappings, &v);
+        } else {
+            error!("Unable to find Animation Player, blend shapes will not work!");
         }
 
         let vrm_meta = match self
@@ -370,14 +192,140 @@ impl Node3DVirtual for VrmPuppet {
         };
         self.vrm_meta = Some(vrm_meta);
 
-        self.vrm_features = match self.vrm_puppet.vrm_type {
-            model::puppet::VrmType::Base => VrmFeatures::new_base(self),
-            model::puppet::VrmType::PerfectSync => VrmFeatures::new_perfect_sync(self),
-        };
+        // self.vrm_features = match self.vrm_puppet.vrm_type {
+        //     model::puppet::VrmType::Base => VrmFeatures::new_base(self),
+        //     model::puppet::VrmType::PerfectSync => VrmFeatures::new_perfect_sync(self),
+        // };
 
         if self.a_pose() != Error::OK {
             logger.error("Unable to a-pose");
         }
+    }
+}
+
+// TODO does Godot guarantee unique names for autogenerated blend shape names?
+/// Iterate through every child node of a [Skeleton3D] and, if that node is a
+/// [MeshInstance3D], register every blend shape present on the mesh.
+fn populate_blend_shape_mappings(
+    mappings: &mut HashMap<String, BlendShapeMapping>,
+    skeleton: &Gd<Skeleton3D>,
+) {
+    let mesh_instance_3d_name = StringName::from(MESH_INST_3D);
+
+    for child in skeleton.get_children().iter_shared() {
+        // Used for debugging only
+        let child_name = child.get_name();
+
+        if !child.is_class(mesh_instance_3d_name.clone().into()) {
+            debug!("Child {child_name} was not a MeshInstance3D, skipping");
+            continue;
+        }
+
+        let child = child.try_cast::<MeshInstance3D>();
+        if child.is_none() {
+            error!(
+                "Skeleton child {child_name} was a MeshInstance3D but was unable to cast to MeshInstance3D");
+            continue;
+        }
+
+        let child = child.unwrap();
+        let mesh = match child.get_mesh() {
+            Some(v) => v,
+            None => {
+                error!("Unable to get mesh from MeshInstance3D {child_name}, skipping");
+                continue;
+            }
+        };
+        let mesh = match mesh.try_cast::<ArrayMesh>() {
+            Some(v) => v,
+            None => {
+                error!("Unable to convert mesh from {child_name} into ArrayMesh, skipping");
+                continue;
+            }
+        };
+
+        for i in 0..mesh.get_blend_shape_count() {
+            let blend_shape_name = mesh.get_blend_shape_name(i).to_string();
+            let blend_shape_property_path = format!("blend_shapes/{}", blend_shape_name);
+            let value = child.get_blend_shape_value(i);
+
+            mappings.insert(
+                blend_shape_name.clone(),
+                BlendShapeMapping::new(
+                    // TODO this seems strange
+                    Gd::from_instance_id(child.instance_id()),
+                    blend_shape_property_path,
+                    value,
+                ),
+            );
+        }
+    }
+}
+
+/// Extract VRM and Perfect Sync mappings from the godot-vrm [AnimationPlayer].
+/// Each mapping is a [String] name to a list of blend shape mapping keys.
+///
+/// Mapping names are converted to lowercase, since naming for expressions is
+/// extremely inconsistent.
+fn populate_and_modify_expression_mappings(
+    mappings: &mut HashMap<String, Vec<String>>,
+    anim_player: &Gd<AnimationPlayer>,
+) {
+    let valid_track_types = [TrackType::TYPE_ROTATION_3D, TrackType::TYPE_BLEND_SHAPE];
+
+    for animation_name in anim_player.get_animation_list().as_slice() {
+        let animation = match anim_player.get_animation(animation_name.into()) {
+            Some(v) => v,
+            None => {
+                error!(
+                    "Unable to get animation while setting up, this is a serious bug. Bailing out!",
+                );
+                return;
+            }
+        };
+
+        let mut morphs = vec![];
+
+        for track_idx in 0..animation.get_track_count() {
+            let track_name = animation.track_get_path(track_idx).to_string();
+            let track_type = animation.track_get_type(track_idx);
+            if !valid_track_types.contains(&track_type) {
+                debug!("{track_name} is not handled, skipping");
+                continue;
+            }
+
+            let (_node_name, morph_name) = match track_name.split_once(":") {
+                Some(v) => v,
+                None => {
+                    error!("Unable to split track {track_name}, this is slightly unexpected");
+                    continue;
+                }
+            };
+
+            if animation.get_track_count() != 1 {
+                info!("Animation {animation_name}:{track_name} does not have exactly 1 key, skipping!");
+                continue;
+            }
+
+            if animation.track_get_key_count(track_idx) < 1 {
+                debug!("{track_name} does not contain a key, skipping!");
+                continue;
+            }
+
+            match track_type {
+                TrackType::TYPE_ROTATION_3D => {
+                    debug!("rotation tracks not yet handled");
+                }
+                TrackType::TYPE_BLEND_SHAPE => morphs.push(morph_name.to_string()),
+                _ => {
+                    error!(
+                        "Trying to handle invalid track type {track_type:?}, this is a major bug!"
+                    )
+                }
+            }
+        }
+
+        mappings.insert(animation_name.to_string().to_lowercase(), morphs);
     }
 }
 
@@ -549,6 +497,21 @@ impl VrmPuppet {
     }
 }
 
+impl VrmPuppet {
+    fn find_animation_player(&self) -> Option<Gd<AnimationPlayer>> {
+        if let Some(v) = self
+            .base
+            .find_child_ex(ANIM_PLAYER.into())
+            .owned(false)
+            .done()
+        {
+            v.try_cast::<AnimationPlayer>()
+        } else {
+            None
+        }
+    }
+}
+
 impl Puppet for VrmPuppet {
     fn logger(&self) -> Logger {
         self.logger.bind().clone()
@@ -595,6 +558,36 @@ impl Puppet3d for VrmPuppet {
         let tx = Transform3D::from_projection(projection.inverse());
 
         skeleton.set_bone_pose_rotation(self.puppet3d.head_bone_id, tx.basis.to_quat());
+
+        // let received_shapes = Vec::from_iter(blend_shapes.keys_shared().map(|v| v.to_string()));
+        // received_shapes
+        //     .par_iter()
+        //     .for_each_with(blend_shapes, |bs, key| {
+        //         if let Some(mappings) = self.expression_mappings.get(&key.to_lowercase()) {
+        //             for mapping in mappings {
+        //                 if let Some(bs_mapping) = self.blend_shape_mappings.get_mut(mapping) {
+        //                     bs_mapping.mesh.set_indexed(
+        //                         NodePath::from(&bs_mapping.blend_shape_path),
+        //                         blend_shapes.get(key.clone()).unwrap_or(0.0.to_variant()),
+        //                     )
+        //                 }
+        //             }
+        //         }
+        //     });
+
+        for (blend_shape_name, score) in blend_shapes.iter_shared() {
+            if let Some(mappings) = self
+                .expression_mappings
+                .get(&blend_shape_name.to_string().to_lowercase())
+            {
+                for mapping in mappings {
+                    if let Some(bsm) = self.blend_shape_mappings.get_mut(mapping) {
+                        bsm.mesh
+                            .set_indexed(NodePath::from(&bsm.blend_shape_path), score.clone())
+                    }
+                }
+            }
+        }
 
         match &self.vrm_features {
             VrmFeatures::Base {
