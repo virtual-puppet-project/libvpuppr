@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::{hash_map::RandomState, HashMap},
+    sync::{Arc, RwLock},
+};
 
 use godot::{
     engine::{
@@ -7,14 +10,15 @@ use godot::{
     prelude::*,
 };
 use log::{debug, error, info};
+use rayon::prelude::*;
 
 use crate::{
     gstring,
-    model::{self, tracking_data::MeowFaceData},
+    model::{self, tracking_data::VTubeStudioData},
     Logger,
 };
 
-use super::{BlendShapeMapping, MorphData, Puppet, Puppet3d};
+use super::{BlendShapeMapping, Puppet, Puppet3d};
 
 const ANIM_PLAYER: &str = "AnimationPlayer";
 const MESH_INST_3D: &str = "MeshInstance3D";
@@ -53,12 +57,7 @@ impl Into<model::puppet::VrmType> for VrmType {
 #[derive(Debug)]
 enum VrmFeatures {
     /// Base VRM 0.0 and 1.0 specification.
-    Base {
-        left_eye_id: i32,
-        right_eye_id: i32,
-
-        expression_data: HashMap<String, Vec<MorphData>>,
-    },
+    Base { left_eye_id: i32, right_eye_id: i32 },
     /// Generally refers to an additional 52 blend shapes provided outside
     /// of the VRM specification.
     PerfectSync,
@@ -69,7 +68,6 @@ impl Default for VrmFeatures {
         Self::Base {
             left_eye_id: i32::default(),
             right_eye_id: i32::default(),
-            expression_data: HashMap::default(),
         }
     }
 }
@@ -114,7 +112,6 @@ pub struct VrmPuppet {
     #[var]
     pub skeleton: Option<Gd<Skeleton3D>>,
 
-    /// Used for manually manipulating each blend shape.
     blend_shape_mappings: HashMap<String, BlendShapeMapping>,
     expression_mappings: HashMap<String, Vec<String>>,
 }
@@ -207,10 +204,12 @@ impl Node3DVirtual for VrmPuppet {
 /// Iterate through every child node of a [Skeleton3D] and, if that node is a
 /// [MeshInstance3D], register every blend shape present on the mesh.
 fn populate_blend_shape_mappings(
+    // mappings: &mut Arc<RwLock<HashMap<String, BlendShapeMapping>>>,
     mappings: &mut HashMap<String, BlendShapeMapping>,
     skeleton: &Gd<Skeleton3D>,
 ) {
     let mesh_instance_3d_name = StringName::from(MESH_INST_3D);
+    // let mut mappings = mappings.write().unwrap();
 
     for child in skeleton.get_children().iter_shared() {
         // Used for debugging only
@@ -249,14 +248,21 @@ fn populate_blend_shape_mappings(
             let blend_shape_property_path = format!("blend_shapes/{}", blend_shape_name);
             let value = child.get_blend_shape_value(i);
 
+            let instance_id = child.instance_id().to_i64();
+            // Quick sanity check to make sure instance ids are valid
+            if let None = InstanceId::try_from_i64(instance_id)
+                .map(|v| Gd::<MeshInstance3D>::try_from_instance_id(v))
+            {
+                error!(
+                    "Invalid instance id for {}::{blend_shape_name}, skipping!",
+                    child.get_name()
+                );
+                continue;
+            }
+
             mappings.insert(
                 blend_shape_name.clone(),
-                BlendShapeMapping::new(
-                    // TODO this seems strange
-                    Gd::from_instance_id(child.instance_id()),
-                    blend_shape_property_path,
-                    value,
-                ),
+                BlendShapeMapping::new(instance_id, blend_shape_property_path, value),
             );
         }
     }
@@ -486,8 +492,13 @@ impl VrmPuppet {
     //     self.vrm_puppet.vrm_type = vrm_type.into();
     // }
 
+    #[func(rename = handle_vtube_studio)]
+    fn handle_vtube_studio_bound(&mut self, data: Gd<VTubeStudioData>) {
+        self.handle_vtube_studio(data);
+    }
+
     #[func(rename = handle_meow_face)]
-    fn handle_meow_face_bound(&mut self, data: Gd<MeowFaceData>) {
+    fn handle_meow_face_bound(&mut self, data: Gd<VTubeStudioData>) {
         self.handle_meow_face(data)
     }
 
@@ -530,8 +541,44 @@ impl Puppet for VrmPuppet {
     }
 }
 
+// NOTE we're using a slight hack to apply blend shapes as fast as possible
+// gdext classes are not Sync, but as long as they are created/destroyed in the
+// same thread, they can be used. Thus, we can find the mesh instance from the
+// instance id and modify it in the thread
+//
+// This does mean that the code is extremely not DRY
 impl Puppet3d for VrmPuppet {
-    fn handle_meow_face(&mut self, data: Gd<MeowFaceData>) {
+    fn handle_i_facial_mocap(&mut self, data: Gd<model::tracking_data::IfmData>) {
+        let data = data.bind();
+        let skeleton = self.skeleton.as_mut().unwrap();
+
+        skeleton.set_bone_pose_rotation(
+            self.puppet3d.head_bone_id,
+            Quaternion::from_euler(data.rotation),
+        );
+        data.blend_shapes.par_iter().for_each(|(k, v)| {
+            if let Some(mappings) = self.expression_mappings.get(&k.to_lowercase()) {
+                for mapping in mappings {
+                    if let Some(mapping) = self.blend_shape_mappings.get(mapping) {
+                        Gd::<MeshInstance3D>::from_instance_id(InstanceId::from_i64(
+                            mapping.mesh_id,
+                        ))
+                        .set_indexed(NodePath::from(&mapping.blend_shape_path), v.to_variant());
+                    }
+                }
+            }
+        });
+
+        match &self.vrm_features {
+            VrmFeatures::Base {
+                left_eye_id,
+                right_eye_id,
+            } => {}
+            VrmFeatures::PerfectSync => {}
+        }
+    }
+
+    fn handle_vtube_studio(&mut self, data: Gd<VTubeStudioData>) {
         let data = data.bind();
         let skeleton = self.skeleton.as_mut().unwrap();
 
@@ -541,15 +588,35 @@ impl Puppet3d for VrmPuppet {
                 Quaternion::from_euler(Vector3::new(rotation.y, rotation.x, rotation.z) * 0.02),
             );
         }
+        if let Some(blend_shapes) = &data.blend_shapes {
+            blend_shapes.par_iter().for_each(|v| {
+                if let Some(mappings) = self.expression_mappings.get(&v.k.to_lowercase()) {
+                    for mapping in mappings {
+                        if let Some(mapping) = self.blend_shape_mappings.get(mapping) {
+                            Gd::<MeshInstance3D>::from_instance_id(InstanceId::from_i64(
+                                mapping.mesh_id,
+                            ))
+                            .set_indexed(
+                                NodePath::from(&mapping.blend_shape_path),
+                                v.v.to_variant(),
+                            );
+                        }
+                    }
+                }
+            });
+        }
 
         match &self.vrm_features {
             VrmFeatures::Base {
                 left_eye_id,
                 right_eye_id,
-                expression_data,
             } => {}
             VrmFeatures::PerfectSync => {}
         }
+    }
+
+    fn handle_meow_face(&mut self, data: Gd<VTubeStudioData>) {
+        self.handle_vtube_studio(data);
     }
 
     fn handle_media_pipe(&mut self, projection: Projection, blend_shapes: Dictionary) {
@@ -559,41 +626,32 @@ impl Puppet3d for VrmPuppet {
 
         skeleton.set_bone_pose_rotation(self.puppet3d.head_bone_id, tx.basis.to_quat());
 
-        // let received_shapes = Vec::from_iter(blend_shapes.keys_shared().map(|v| v.to_string()));
-        // received_shapes
-        //     .par_iter()
-        //     .for_each_with(blend_shapes, |bs, key| {
-        //         if let Some(mappings) = self.expression_mappings.get(&key.to_lowercase()) {
-        //             for mapping in mappings {
-        //                 if let Some(bs_mapping) = self.blend_shape_mappings.get_mut(mapping) {
-        //                     bs_mapping.mesh.set_indexed(
-        //                         NodePath::from(&bs_mapping.blend_shape_path),
-        //                         blend_shapes.get(key.clone()).unwrap_or(0.0.to_variant()),
-        //                     )
-        //                 }
-        //             }
-        //         }
-        //     });
+        let blend_shapes: HashMap<String, f32, RandomState> = HashMap::from_iter(
+            blend_shapes
+                .iter_shared()
+                .map(|(k, v)| (k.to_string(), v.to::<f32>())),
+        );
 
-        for (blend_shape_name, score) in blend_shapes.iter_shared() {
-            if let Some(mappings) = self
-                .expression_mappings
-                .get(&blend_shape_name.to_string().to_lowercase())
-            {
+        blend_shapes.par_iter().for_each(|(name, value)| {
+            if let Some(mappings) = self.expression_mappings.get(&name.to_lowercase()) {
                 for mapping in mappings {
-                    if let Some(bsm) = self.blend_shape_mappings.get_mut(mapping) {
-                        bsm.mesh
-                            .set_indexed(NodePath::from(&bsm.blend_shape_path), score.clone())
+                    if let Some(mapping) = self.blend_shape_mappings.get(mapping) {
+                        Gd::<MeshInstance3D>::from_instance_id(InstanceId::from_i64(
+                            mapping.mesh_id,
+                        ))
+                        .set_indexed(
+                            NodePath::from(&mapping.blend_shape_path),
+                            value.to_variant(),
+                        );
                     }
                 }
             }
-        }
+        });
 
         match &self.vrm_features {
             VrmFeatures::Base {
                 left_eye_id,
                 right_eye_id,
-                expression_data,
             } => {}
             VrmFeatures::PerfectSync => {}
         }

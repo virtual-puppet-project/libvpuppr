@@ -5,7 +5,7 @@ use godot::{
     prelude::*,
 };
 
-use crate::{gstring, model::tracking_data::MeowFaceData, Logger};
+use crate::{gstring, model::tracking_data::VTubeStudioData, Logger};
 
 use super::{BlendShapeMapping, Puppet, Puppet3d};
 
@@ -135,7 +135,7 @@ impl Node3DVirtual for GlbPuppet {
                     blend_shape_name.clone(),
                     BlendShapeMapping::new(
                         // TODO this seems strange
-                        Gd::from_instance_id(child.instance_id()),
+                        child.instance_id().to_i64(),
                         blend_shape_property_path,
                         value,
                     ),
@@ -147,8 +147,13 @@ impl Node3DVirtual for GlbPuppet {
 
 #[godot_api]
 impl GlbPuppet {
+    #[func(rename = handle_vtube_studio)]
+    fn handle_vtube_studio_bound(&mut self, data: Gd<VTubeStudioData>) {
+        self.handle_vtube_studio(data);
+    }
+
     #[func(rename = handle_meow_face)]
-    fn handle_meow_face_bound(&mut self, data: Gd<MeowFaceData>) {
+    fn handle_meow_face_bound(&mut self, data: Gd<VTubeStudioData>) {
         self.handle_meow_face(data)
     }
 
@@ -177,7 +182,11 @@ impl Puppet for GlbPuppet {
 }
 
 impl Puppet3d for GlbPuppet {
-    fn handle_meow_face(&mut self, data: Gd<MeowFaceData>) {
+    fn handle_i_facial_mocap(&mut self, data: Gd<crate::model::tracking_data::IfmData>) {
+        //
+    }
+
+    fn handle_vtube_studio(&mut self, data: Gd<VTubeStudioData>) {
         let data = data.bind();
         let skeleton = self.skeleton.as_mut().unwrap();
 
@@ -187,6 +196,10 @@ impl Puppet3d for GlbPuppet {
                 Quaternion::from_euler(Vector3::new(rotation.y, rotation.x, rotation.z) * 0.02),
             );
         }
+    }
+
+    fn handle_meow_face(&mut self, data: Gd<VTubeStudioData>) {
+        self.handle_vtube_studio(data);
     }
 
     fn handle_media_pipe(&mut self, projection: Projection, _blend_shapes: Dictionary) {
