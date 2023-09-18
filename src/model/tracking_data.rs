@@ -8,16 +8,16 @@ use super::GodotPath;
 
 #[derive(Debug, Default, GodotClass, Serialize, Deserialize)]
 #[class(init)]
-pub struct IfmOptions {
+pub struct IFacialMocapOptions {
     pub address: GodotPath,
     pub port: i32,
 }
 
 #[godot_api]
-impl IfmOptions {}
+impl IFacialMocapOptions {}
 
 #[derive(Debug, Default, GodotClass)]
-pub struct IfmData {
+pub struct IFacialMocapData {
     pub position: Vector3,
     pub rotation: Vector3,
     pub right_eye: Vector3,
@@ -26,16 +26,16 @@ pub struct IfmData {
 }
 
 #[godot_api]
-impl RefCountedVirtual for IfmData {
+impl RefCountedVirtual for IFacialMocapData {
     fn init(_base: godot::obj::Base<Self::Base>) -> Self {
         Self::default()
     }
 }
 
 #[godot_api]
-impl IfmData {
+impl IFacialMocapData {
     #[func]
-    fn from(data: PackedByteArray) -> Gd<IfmData> {
+    fn from(data: PackedByteArray) -> Gd<IFacialMocapData> {
         Gd::new(match std::str::from_utf8(data.as_slice()) {
             Ok(v) => {
                 let mut r = Self::default();

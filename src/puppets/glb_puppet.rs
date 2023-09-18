@@ -5,7 +5,11 @@ use godot::{
     prelude::*,
 };
 
-use crate::{gstring, model::tracking_data::VTubeStudioData, Logger};
+use crate::{
+    gstring,
+    model::tracking_data::{IFacialMocapData, VTubeStudioData},
+    Logger,
+};
 
 use super::{BlendShapeMapping, Puppet, Puppet3d};
 
@@ -154,12 +158,17 @@ impl GlbPuppet {
 
     #[func(rename = handle_meow_face)]
     fn handle_meow_face_bound(&mut self, data: Gd<VTubeStudioData>) {
-        self.handle_meow_face(data)
+        self.handle_meow_face(data);
     }
 
     #[func(rename = handle_media_pipe)]
     fn handle_media_pipe_bound(&mut self, projection: Projection, blend_shapes: Dictionary) {
         self.handle_media_pipe(projection, blend_shapes);
+    }
+
+    #[func(rename = handle_i_facial_mocap)]
+    fn handle_i_facial_mocap_bound(&mut self, data: Gd<IFacialMocapData>) {
+        self.handle_i_facial_mocap(data);
     }
 }
 
@@ -182,7 +191,7 @@ impl Puppet for GlbPuppet {
 }
 
 impl Puppet3d for GlbPuppet {
-    fn handle_i_facial_mocap(&mut self, data: Gd<crate::model::tracking_data::IfmData>) {
+    fn handle_i_facial_mocap(&mut self, data: Gd<IFacialMocapData>) {
         //
     }
 

@@ -14,11 +14,11 @@ use rayon::prelude::*;
 
 use crate::{
     gstring,
-    model::{self, tracking_data::VTubeStudioData, IfmData},
+    model::{self, tracking_data::VTubeStudioData, IFacialMocapData},
     Logger,
 };
 
-use super::{BlendShapeMapping, Puppet, Puppet3d};
+use super::{BlendShapeMapping, IkTargets3d, Puppet, Puppet3d};
 
 const ANIM_PLAYER: &str = "AnimationPlayer";
 const MESH_INST_3D: &str = "MeshInstance3D";
@@ -111,6 +111,8 @@ pub struct VrmPuppet {
 
     #[var]
     pub skeleton: Option<Gd<Skeleton3D>>,
+    #[var]
+    pub ik_targets_3d: Option<Gd<IkTargets3d>>,
 
     blend_shape_mappings: HashMap<String, BlendShapeMapping>,
     expression_mappings: HashMap<String, Vec<String>>,
@@ -120,7 +122,7 @@ pub struct VrmPuppet {
 impl Node3DVirtual for VrmPuppet {
     fn init(base: godot::obj::Base<Self::Base>) -> Self {
         Self {
-            logger: Logger::create(gstring!("VrmPuppet")),
+            logger: Logger::create("VrmPuppet".into()),
 
             base,
 
@@ -131,6 +133,7 @@ impl Node3DVirtual for VrmPuppet {
             vrm_meta: None,
 
             skeleton: None,
+            ik_targets_3d: None,
 
             blend_shape_mappings: HashMap::new(),
             expression_mappings: HashMap::new(),
@@ -169,6 +172,40 @@ impl Node3DVirtual for VrmPuppet {
                 .insert(i, skeleton.get_bone_pose(i));
         }
 
+        let mut ik_targets_3d = IkTargets3d::default();
+        // TODO these are all hardcoded, maybe pull values from elsewhere?
+        if let v @ Some(_) = self.create_armature("HeadArmature", "Head") {
+            ik_targets_3d.head = v;
+
+            let mut tx = skeleton.get_bone_global_pose(skeleton.find_bone("Head".into()));
+            tx.origin = self.base.to_global(tx.origin);
+            ik_targets_3d.head_starting_transform = tx;
+        }
+        if let v @ Some(_) = self.create_armature("LeftHandArmature", "LeftHand") {
+            ik_targets_3d.left_hand = v;
+
+            let mut tx = skeleton.get_bone_global_pose(skeleton.find_bone("LeftHand".into()));
+            tx.origin = self.base.to_global(tx.origin);
+            ik_targets_3d.left_hand_starting_transform = tx;
+        }
+        if let v @ Some(_) = self.create_armature("RightHandArmature", "RightHand") {
+            ik_targets_3d.right_hand = v;
+
+            let mut tx = skeleton.get_bone_global_pose(skeleton.find_bone("RightHand".into()));
+            tx.origin = self.base.to_global(tx.origin);
+            ik_targets_3d.right_hand_starting_transform = tx;
+        }
+        if let v @ Some(_) = self.create_armature("HipsArmature", "Hips") {
+            ik_targets_3d.hips = v;
+        }
+        if let v @ Some(_) = self.create_armature("LeftFootArmature", "LeftFoot") {
+            ik_targets_3d.left_foot = v;
+        }
+        if let v @ Some(_) = self.create_armature("RightFootArmature", "RightFoot") {
+            ik_targets_3d.right_foot = v;
+        }
+        self.ik_targets_3d = Some(Gd::new(ik_targets_3d));
+
         populate_blend_shape_mappings(&mut self.blend_shape_mappings, skeleton);
         if let Some(v) = self.find_animation_player() {
             populate_and_modify_expression_mappings(&mut self.expression_mappings, &v);
@@ -194,9 +231,9 @@ impl Node3DVirtual for VrmPuppet {
         //     model::puppet::VrmType::PerfectSync => VrmFeatures::new_perfect_sync(self),
         // };
 
-        if self.a_pose() != Error::OK {
-            logger.error("Unable to a-pose");
-        }
+        // if self.a_pose() != Error::OK {
+        //     logger.error("Unable to a-pose");
+        // }
     }
 }
 
@@ -493,7 +530,7 @@ impl VrmPuppet {
     // }
 
     #[func(rename = handle_i_facial_mocap)]
-    fn handle_i_facial_mocap_bound(&mut self, data: Gd<IfmData>) {
+    fn handle_i_facial_mocap_bound(&mut self, data: Gd<IFacialMocapData>) {
         self.handle_i_facial_mocap(data);
     }
 
@@ -526,6 +563,24 @@ impl VrmPuppet {
             None
         }
     }
+
+    fn create_armature(&self, armature_name: &str, bone_name: &str) -> Option<Gd<Node3D>> {
+        let skeleton = self.skeleton.as_ref().unwrap();
+
+        let bone_idx = skeleton.find_bone(bone_name.into());
+        if bone_idx < 0 {
+            return None;
+        }
+
+        let mut tx = skeleton.get_bone_global_pose(bone_idx);
+        tx.origin = self.base.to_global(tx.origin);
+
+        let mut armature = Node3D::new_alloc();
+        armature.set_name(armature_name.into());
+        armature.set_transform(tx);
+
+        Some(armature)
+    }
 }
 
 impl Puppet for VrmPuppet {
@@ -553,7 +608,7 @@ impl Puppet for VrmPuppet {
 //
 // This does mean that the code is extremely not DRY
 impl Puppet3d for VrmPuppet {
-    fn handle_i_facial_mocap(&mut self, data: Gd<model::tracking_data::IfmData>) {
+    fn handle_i_facial_mocap(&mut self, data: Gd<IFacialMocapData>) {
         let data = data.bind();
         let skeleton = self.skeleton.as_mut().unwrap();
 
@@ -588,10 +643,47 @@ impl Puppet3d for VrmPuppet {
         let skeleton = self.skeleton.as_mut().unwrap();
 
         if let Some(rotation) = data.rotation {
-            skeleton.set_bone_pose_rotation(
-                self.puppet3d.head_bone_id,
-                Quaternion::from_euler(Vector3::new(rotation.y, rotation.x, rotation.z) * 0.02),
-            );
+            if let Some(ik) = self.ik_targets_3d.as_mut() {
+                let rotation = Vector3::new(rotation.y, rotation.x, rotation.z).to_variant();
+                if let Some(v) = ik.bind_mut().head.as_mut() {
+                    v.call_deferred("set_rotation_degrees".into(), &[rotation.clone()]);
+                }
+                if let Some(v) = ik.bind_mut().left_hand.as_mut() {
+                    v.call_deferred("set_rotation_degrees".into(), &[rotation.clone()]);
+                }
+                if let Some(v) = ik.bind_mut().right_hand.as_mut() {
+                    v.call_deferred("set_rotation_degrees".into(), &[rotation.clone()]);
+                }
+            }
+        }
+        if let Some(position) = data.position {
+            if let Some(ik) = self.ik_targets_3d.as_mut() {
+                let mut ik = ik.bind_mut();
+
+                let head_origin = ik.head_starting_transform.origin;
+                if let Some(v) = ik.head.as_mut() {
+                    v.call_deferred(
+                        "set_position".into(),
+                        &[(head_origin - (position * 0.02)).to_variant()],
+                    );
+                }
+
+                let left_hand_origin = ik.left_hand_starting_transform.origin;
+                if let Some(v) = ik.left_hand.as_mut() {
+                    v.call_deferred(
+                        "set_position".into(),
+                        &[(left_hand_origin - (position * 0.02)).to_variant()],
+                    );
+                }
+
+                let right_hand_origin = ik.right_hand_starting_transform.origin;
+                if let Some(v) = ik.right_hand.as_mut() {
+                    v.call_deferred(
+                        "set_position".into(),
+                        &[(right_hand_origin - (position * 0.02)).to_variant()],
+                    );
+                }
+            }
         }
         if let Some(blend_shapes) = &data.blend_shapes {
             blend_shapes.par_iter().for_each(|v| {

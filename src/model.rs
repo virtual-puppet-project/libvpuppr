@@ -87,7 +87,7 @@ pub struct Metadata {
 
     /// Options used when starting iFacialMocap.
     #[serde(default)]
-    ifm_options: IfmOptions,
+    i_facial_mocap_options: IFacialMocapOptions,
     /// Options used when starting MediaPipe.
     #[serde(default)]
     media_pipe_options: MediaPipeOptions,

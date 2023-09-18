@@ -2,6 +2,8 @@ pub mod glb_puppet;
 pub mod png_puppet;
 pub mod vrm_puppet;
 
+use std::fmt::Display;
+
 use godot::{
     engine::{MeshInstance3D, Skeleton3D},
     prelude::*,
@@ -9,9 +11,35 @@ use godot::{
 
 use crate::{
     gstring,
-    model::tracking_data::{IfmData, VTubeStudioData},
+    model::tracking_data::{IFacialMocapData, VTubeStudioData},
     Logger,
 };
+
+#[derive(Debug, Default, GodotClass)]
+#[class(init)]
+pub struct IkTargets3d {
+    #[var]
+    pub head: Option<Gd<Node3D>>,
+    #[var]
+    pub head_starting_transform: Transform3D,
+    #[var]
+    pub left_hand: Option<Gd<Node3D>>,
+    #[var]
+    pub left_hand_starting_transform: Transform3D,
+    #[var]
+    pub right_hand: Option<Gd<Node3D>>,
+    #[var]
+    pub right_hand_starting_transform: Transform3D,
+    #[var]
+    pub hips: Option<Gd<Node3D>>,
+    #[var]
+    pub left_foot: Option<Gd<Node3D>>,
+    #[var]
+    pub right_foot: Option<Gd<Node3D>>,
+}
+
+#[godot_api]
+impl IkTargets3d {}
 
 pub trait Puppet {
     fn logger(&self) -> Logger;
@@ -37,7 +65,7 @@ pub trait Puppet3d: Puppet {
         self.managed_node().get_node_or_null(node_path)
     }
 
-    fn handle_i_facial_mocap(&mut self, data: Gd<IfmData>);
+    fn handle_i_facial_mocap(&mut self, data: Gd<IFacialMocapData>);
 
     fn handle_vtube_studio(&mut self, data: Gd<VTubeStudioData>);
 
