@@ -14,9 +14,12 @@ use godot::{
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 
+pub use tracking_data::*;
+
 #[derive(Debug)]
 enum SaveFileError {
     ConversionError { data_name: String },
+    ReadError { path: PathBuf },
     WriteError { data_name: String, path: PathBuf },
     FileDoesNotExist { path: PathBuf },
 }
@@ -26,6 +29,9 @@ impl Display for SaveFileError {
         match self {
             SaveFileError::ConversionError { data_name } => {
                 write!(f, "Failed to convert {data_name} to String")
+            }
+            SaveFileError::ReadError { path } => {
+                write!(f, "Failed to read data from path {path:?}")
             }
             SaveFileError::WriteError { data_name, path } => {
                 write!(f, "Failed to write {data_name} to {path:?}")
@@ -42,7 +48,7 @@ impl Display for SaveFileError {
 /// This can also be used for arbitrary paths, as Godot can handle arbitrary
 /// paths as well.
 #[derive(Debug, Default, Serialize, Deserialize)]
-struct GodotPath(String);
+pub struct GodotPath(String);
 
 impl std::ops::Deref for GodotPath {
     type Target = String;
@@ -58,6 +64,12 @@ impl From<GodotString> for GodotPath {
     }
 }
 
+impl Into<GodotString> for GodotPath {
+    fn into(self) -> GodotString {
+        self.0.into()
+    }
+}
+
 trait SaveFile: Sized {
     fn file_name(&self) -> String;
 
@@ -66,9 +78,25 @@ trait SaveFile: Sized {
     fn try_load(path: &PathBuf) -> Result<Self, SaveFileError>;
 }
 
+/// App-level metadata.
 #[derive(Debug, Default, GodotClass, Serialize, Deserialize)]
 pub struct Metadata {
+    /// Absolute paths to runner data files.
+    #[serde(default)]
     known_runner_data: Vec<PathBuf>,
+
+    /// Options used when starting iFacialMocap.
+    #[serde(default)]
+    ifm_options: IfmOptions,
+    /// Options used when starting MediaPipe.
+    #[serde(default)]
+    media_pipe_options: MediaPipeOptions,
+    /// Options used when starting VTubeStudio.
+    #[serde(default)]
+    vtube_studio_options: VTubeStudioOptions,
+    /// Options used when starting MeowFace.
+    #[serde(default)]
+    meow_face_options: MeowFaceOptions,
 }
 
 #[godot_api]
@@ -80,8 +108,10 @@ impl RefCountedVirtual for Metadata {
 
 #[godot_api]
 impl Metadata {
-    #[func]
-    fn try_save(&self) -> Error {
+    #[func(rename = try_save)]
+    fn try_save_bound(&self) -> Error {
+        // TODO use trait methods
+        // self.try_save(self.file_name())
         let path: PathBuf = ProjectSettings::singleton()
             .globalize_path(format!("user://{}", "metadata.tot").into())
             .to_string()
@@ -189,6 +219,44 @@ impl Metadata {
             .retain(|v| !missing_data.contains(&v));
 
         runner_data
+    }
+}
+
+impl SaveFile for Metadata {
+    fn file_name(&self) -> String {
+        "metadata.tot".into()
+    }
+
+    fn try_save(&self, path: &PathBuf) -> Result<(), SaveFileError> {
+        let contents = match tot::to_string(&self) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Unable to convert RunnerData to string: {e}");
+
+                return Err(SaveFileError::ConversionError {
+                    data_name: self.file_name(),
+                });
+            }
+        };
+
+        std::fs::write(path, contents).map_err(|_| SaveFileError::WriteError {
+            data_name: self.file_name(),
+            path: path.to_path_buf(),
+        })
+    }
+
+    fn try_load(path: &PathBuf) -> Result<Self, SaveFileError> {
+        if let Ok(v) = std::fs::read_to_string(&path) {
+            return tot::from_str::<Metadata>(v.as_str()).map_err(|_| SaveFileError::ReadError {
+                path: path.to_path_buf(),
+            });
+        }
+
+        error!("Unable to load runner data from path {path:?}");
+
+        Err(SaveFileError::ReadError {
+            path: path.to_path_buf(),
+        })
     }
 }
 

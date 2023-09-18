@@ -14,7 +14,7 @@ use rayon::prelude::*;
 
 use crate::{
     gstring,
-    model::{self, tracking_data::VTubeStudioData},
+    model::{self, tracking_data::VTubeStudioData, IfmData},
     Logger,
 };
 
@@ -491,6 +491,11 @@ impl VrmPuppet {
     // fn set_vrm_type(&mut self, vrm_type: VrmType) {
     //     self.vrm_puppet.vrm_type = vrm_type.into();
     // }
+
+    #[func(rename = handle_i_facial_mocap)]
+    fn handle_i_facial_mocap_bound(&mut self, data: Gd<IfmData>) {
+        self.handle_i_facial_mocap(data);
+    }
 
     #[func(rename = handle_vtube_studio)]
     fn handle_vtube_studio_bound(&mut self, data: Gd<VTubeStudioData>) {

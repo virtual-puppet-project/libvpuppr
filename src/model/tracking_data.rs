@@ -4,6 +4,18 @@ use godot::prelude::*;
 use log::error;
 use serde::{Deserialize, Serialize};
 
+use super::GodotPath;
+
+#[derive(Debug, Default, GodotClass, Serialize, Deserialize)]
+#[class(init)]
+pub struct IfmOptions {
+    pub address: GodotPath,
+    pub port: i32,
+}
+
+#[godot_api]
+impl IfmOptions {}
+
 #[derive(Debug, Default, GodotClass)]
 pub struct IfmData {
     pub position: Vector3,
@@ -100,8 +112,8 @@ impl IfmData {
                         r.blend_shapes.insert(
                             k
                                 // TODO maybe use https://github.com/BurntSushi/aho-corasick for faster replace?
-                                .replace("_l", "left")
-                                .replace("_r", "right"),
+                                .replace("_L", "left")
+                                .replace("_R", "right"),
                             100.0 / v.parse().unwrap_or(0.0),
                         );
                     } else {
@@ -118,6 +130,16 @@ impl IfmData {
         })
     }
 }
+
+#[derive(Debug, Default, GodotClass, Serialize, Deserialize)]
+#[class(init)]
+pub struct VTubeStudioOptions {
+    pub address: GodotPath,
+    pub port: i32,
+}
+
+#[godot_api]
+impl VTubeStudioOptions {}
 
 #[derive(Debug, Default, Serialize, Deserialize, GodotClass)]
 pub struct VTubeStudioData {
@@ -161,3 +183,22 @@ pub struct VtBlendShape {
     pub k: String,
     pub v: f32,
 }
+
+#[derive(Debug, Default, GodotClass, Serialize, Deserialize)]
+#[class(init)]
+pub struct MeowFaceOptions {
+    pub address: GodotPath,
+    pub port: i32,
+}
+
+#[godot_api]
+impl MeowFaceOptions {}
+
+#[derive(Debug, Default, GodotClass, Serialize, Deserialize)]
+#[class(init)]
+pub struct MediaPipeOptions {
+    pub camera_resolution: Vector2i,
+}
+
+#[godot_api]
+impl MediaPipeOptions {}
