@@ -116,6 +116,7 @@ impl IFacialMocapData {
                                 .replace("_R", "right"),
                             100.0 / v.parse().unwrap_or(0.0),
                         );
+                    } else if v.is_empty() {
                     } else {
                         error!("Unhandled ifm key-value pair {v}");
                     }

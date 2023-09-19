@@ -345,11 +345,6 @@ fn populate_and_modify_expression_mappings(
                 }
             };
 
-            if animation.get_track_count() != 1 {
-                info!("Animation {animation_name}:{track_name} does not have exactly 1 key, skipping!");
-                continue;
-            }
-
             if animation.track_get_key_count(track_idx) < 1 {
                 debug!("{track_name} does not contain a key, skipping!");
                 continue;
@@ -612,10 +607,35 @@ impl Puppet3d for VrmPuppet {
         let data = data.bind();
         let skeleton = self.skeleton.as_mut().unwrap();
 
-        skeleton.set_bone_pose_rotation(
-            self.puppet3d.head_bone_id,
-            Quaternion::from_euler(data.rotation),
-        );
+        if let Some(ik) = self.ik_targets_3d.as_mut() {
+            let rotation = Vector3::new(data.rotation.x, data.rotation.y, data.rotation.z).to_variant();
+            if let Some(v) = ik.bind_mut().head.as_mut() {
+                v.call_deferred("set_rotation_degrees".into(), &[rotation.clone()]);
+            }
+            let mut ik = ik.bind_mut();
+
+            let head_origin = ik.head_starting_transform.origin;
+            if let Some(v) = ik.head.as_mut() {
+                v.call_deferred(
+                    "set_position".into(),
+                    &[(head_origin + (data.position)).to_variant()],
+                );
+            }
+            let left_hand_origin = ik.left_hand_starting_transform.origin;
+            if let Some(v) = ik.left_hand.as_mut() {
+                v.call_deferred(
+                    "set_position".into(),
+                    &[(left_hand_origin + (data.position)).to_variant()],
+                );
+            }
+            let right_hand_origin = ik.right_hand_starting_transform.origin;
+            if let Some(v) = ik.right_hand.as_mut() {
+                v.call_deferred(
+                    "set_position".into(),
+                    &[(right_hand_origin + (data.position)).to_variant()],
+                );
+            }
+        }
         data.blend_shapes.par_iter().for_each(|(k, v)| {
             if let Some(mappings) = self.expression_mappings.get(&k.to_lowercase()) {
                 for mapping in mappings {
