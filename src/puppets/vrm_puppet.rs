@@ -664,15 +664,17 @@ impl Puppet3d for VrmPuppet {
 
         if let Some(rotation) = data.rotation {
             if let Some(ik) = self.ik_targets_3d.as_mut() {
-                let rotation = Vector3::new(rotation.y, rotation.x, rotation.z).to_variant();
-                if let Some(v) = ik.bind_mut().head.as_mut() {
-                    v.call_deferred("set_rotation_degrees".into(), &[rotation.clone()]);
-                }
-                if let Some(v) = ik.bind_mut().left_hand.as_mut() {
-                    v.call_deferred("set_rotation_degrees".into(), &[rotation.clone()]);
-                }
-                if let Some(v) = ik.bind_mut().right_hand.as_mut() {
-                    v.call_deferred("set_rotation_degrees".into(), &[rotation.clone()]);
+                let mut ik = ik.bind_mut();
+
+                // Data comes in Unity ordering I think?
+                let rotation = Vector3::new(rotation.y, rotation.x, rotation.z);
+
+                let head_rotation = ik.head_starting_transform.basis.to_euler(EulerOrder::YXZ);
+                if let Some(v) = ik.head.as_mut() {
+                    v.call_deferred(
+                        "set_rotation_degrees".into(),
+                        &[(rotation - head_rotation).to_variant()],
+                    );
                 }
             }
         }

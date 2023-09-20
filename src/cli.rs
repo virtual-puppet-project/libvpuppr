@@ -31,6 +31,9 @@ pub struct Args {
     /// disable all logging, overrides verbose
     #[argh(switch, short = 'q', long = "quiet")]
     quiet: bool,
+    /// limit the max fps to the given value
+    #[argh(option)]
+    max_fps: Option<u32>,
     #[argh(subcommand)]
     commands: Option<Commands>,
 }
@@ -50,6 +53,7 @@ impl Args {
 
         r.insert("verbose", self.verbose);
         r.insert("quiet", self.quiet);
+        r.insert("max_fps", self.max_fps.unwrap_or(0));
 
         if let Some(c) = &self.commands {
             r.insert("has_command", true);
