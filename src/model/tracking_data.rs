@@ -114,7 +114,7 @@ impl IFacialMocapData {
                                 // TODO maybe use https://github.com/BurntSushi/aho-corasick for faster replace?
                                 .replace("_L", "left")
                                 .replace("_R", "right"),
-                            100.0 / v.parse().unwrap_or(0.0),
+                            f32::from(v.parse::<i16>().unwrap_or(0)) / 100.0,
                         );
                     } else if v.is_empty() {
                     } else {
