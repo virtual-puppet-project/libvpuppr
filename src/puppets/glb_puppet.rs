@@ -6,12 +6,14 @@ use godot::{
 };
 
 use crate::{
-    gstring,
-    model::tracking_data::{IFacialMocapData, VTubeStudioData},
+    model::{
+        puppet::{GlbData, PuppetData},
+        tracking_data::{IFacialMocapData, VTubeStudioData},
+    },
     Logger,
 };
 
-use super::{BlendShapeMapping, Puppet, Puppet3d};
+use super::{BlendShapeMapping, Puppet, Puppet3d, Puppet3dError};
 
 // TODO this is used in both vrm and glb puppet
 const MESH_INST_3D: &str = "MeshInstance3D";
@@ -43,7 +45,7 @@ pub struct GlbPuppet {
 impl Node3DVirtual for GlbPuppet {
     fn init(base: godot::obj::Base<Self::Base>) -> Self {
         Self {
-            logger: Logger::create(gstring!("GlbPuppet")),
+            logger: Logger::create("GlbPuppet".into()),
 
             base,
 
@@ -191,6 +193,16 @@ impl Puppet for GlbPuppet {
 }
 
 impl Puppet3d for GlbPuppet {
+    // fn init_pose(&mut self, data: Gd<RunnerData>) -> Result<(), Puppet3dError> {
+    //     let PuppetData::Glb(GlbData { puppet, .. }) = &data.bind().puppet_data else {
+    //         return Err(Puppet3dError::PuppetTypeMismatch);
+    //     };
+
+    //     // TODO stub
+
+    //     Ok(())
+    // }
+
     fn handle_i_facial_mocap(&mut self, data: Gd<IFacialMocapData>) {
         //
     }
