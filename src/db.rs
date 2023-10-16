@@ -23,6 +23,13 @@ pub enum Error {
         error: gluesql::prelude::Error,
     },
     TooManyStatements(usize),
+    SelectFailure,
+    InsertFailure,
+    UpdateFailure,
+    DeleteFailure,
+    CreateTableFailure,
+    DropTableFailure,
+    AlterTableFailure,
 }
 
 impl Display for Error {
@@ -32,6 +39,13 @@ impl Display for Error {
                 write!(f, "Failed to execute: {command}\nOriginal error: {error}")
             }
             Self::TooManyStatements(v) => write!(f, "Found {v} statements, declining to execute"),
+            Self::SelectFailure => write!(f, "Select failure"),
+            Self::InsertFailure => write!(f, "Insert failure"),
+            Self::UpdateFailure => write!(f, "Update failure"),
+            Self::DeleteFailure => write!(f, "Delete failure"),
+            Self::CreateTableFailure => write!(f, "Create table failure"),
+            Self::DropTableFailure => write!(f, "Drop table failure"),
+            Self::AlterTableFailure => write!(f, "Alter table failure"),
         }
     }
 }
@@ -139,6 +153,7 @@ impl DerefMut for Database {
 
 #[godot_api]
 impl RefCountedVirtual for Database {
+    // NOTE calling `new` is not allowed
     #[allow(unreachable_code)]
     fn init(_base: godot::obj::Base<Self::Base>) -> Self {
         panic!("Use create instead of new for database safety");
@@ -160,7 +175,7 @@ impl RefCountedVirtual for Database {
 #[godot_api]
 impl Database {
     #[func]
-    fn create() -> Variant {
+    fn create() -> Option<Gd<Database>> {
         debug!("Create database");
 
         let db_path = ProjectSettings::singleton()
@@ -176,7 +191,7 @@ impl Database {
             Ok(v) => v,
             Err(e) => {
                 error!("{e}");
-                return Variant::nil();
+                return None;
             }
         };
 
@@ -189,7 +204,7 @@ impl Database {
             }
         }
 
-        Gd::new(Self { db: glue }).to_variant()
+        Some(Gd::new(Self { db: glue }))
     }
 
     /// Execute a sql command, discard the results, and return a success code.
@@ -208,14 +223,95 @@ impl Database {
 
     /// Run a select query.
     #[func(rename = select)]
-    fn select_bound(&mut self, command: GodotString) -> Array<Variant> {
+    fn select_bound(&mut self, command: GodotString) -> Array<Array<Variant>> {
         debug!("Selecting sql: {command}");
 
         if let Ok(v) = self.select(command.to_string()) {
-            return Array::from_iter(v.iter().map(|v| v.to_variant()));
+            return Array::from_iter(
+                v.iter()
+                    .map(|v| Array::from_iter(v.iter().map(Value::to_variant))),
+            );
         }
 
         Array::new()
+    }
+
+    /// Run an insert statement.
+    #[func(rename = insert)]
+    fn insert_bound(&mut self, command: GodotString) -> GodotError {
+        debug!("Inserting sql: {command}");
+
+        if let Err(e) = self.insert(command.to_string()) {
+            error!("{e}");
+            return GodotError::ERR_DATABASE_CANT_WRITE;
+        }
+
+        GodotError::OK
+    }
+
+    /// Run an update statement.
+    #[func(rename = update)]
+    fn update_bound(&mut self, command: GodotString) -> GodotError {
+        debug!("Updating sql: {command}");
+
+        if let Err(e) = self.update(command.to_string()) {
+            error!("{e}");
+            return GodotError::ERR_DATABASE_CANT_WRITE;
+        }
+
+        GodotError::OK
+    }
+
+    /// Run a delete statement.
+    #[func(rename = delete)]
+    fn delete_bound(&mut self, command: GodotString) -> GodotError {
+        debug!("Deleting sql: {command}");
+
+        if let Err(e) = self.delete(command.to_string()) {
+            error!("{e}");
+            return GodotError::ERR_DATABASE_CANT_WRITE;
+        }
+
+        GodotError::OK
+    }
+
+    /// Run a create table statement.
+    #[func(rename = create_table)]
+    fn create_table_bound(&mut self, command: GodotString) -> GodotError {
+        debug!("Creating table sql: {command}");
+
+        if let Err(e) = self.create_table(command.to_string()) {
+            error!("{e}");
+            return GodotError::ERR_DATABASE_CANT_WRITE;
+        }
+
+        GodotError::OK
+    }
+
+    /// Run a drop table statement.
+    #[func(rename = drop_table)]
+    fn drop_table_bound(&mut self, command: GodotString) -> GodotError {
+        debug!("Dropping table sql: {command}");
+
+        if let Err(e) = self.drop_table(command.to_string()) {
+            error!("{e}");
+            return GodotError::ERR_DATABASE_CANT_WRITE;
+        }
+
+        GodotError::OK
+    }
+
+    /// Run an alter table statement.
+    #[func(rename = alter_table)]
+    fn alter_table_bound(&mut self, command: GodotString) -> GodotError {
+        debug!("Altering table sql: {command}");
+
+        if let Err(e) = self.alter_table(command.to_string()) {
+            error!("{e}");
+            return GodotError::ERR_DATABASE_CANT_WRITE;
+        }
+
+        GodotError::OK
     }
 }
 
@@ -232,10 +328,9 @@ impl Database {
         })
     }
 
-    /// Run a select query. Any command can be run, but the results will be
-    /// assumed to be from a select statement.
-    fn select(&mut self, command: impl AsRef<str>) -> Result<Vec<Value>> {
-        let payloads = match self.run(command.as_ref()) {
+    /// Run a select query. The results will be assumed to be from a select statement.
+    fn select(&mut self, command: impl AsRef<str>) -> Result<Vec<Vec<Value>>> {
+        let mut payloads = match self.run(command.as_ref()) {
             Ok(v) => v,
             Err(e) => return Err(e),
         };
@@ -244,20 +339,99 @@ impl Database {
             return Err(Error::TooManyStatements(payloads.len()));
         }
 
-        let mut r = vec![];
-        for payload in payloads {
+        if let Some(payload) = payloads.pop() {
             let Payload::Select { rows, .. } = payload else {
                 error!("Unhandled payload data: {payload:?}");
-                continue;
+                return Err(Error::SelectFailure);
             };
 
-            for row in rows {
-                for col in row {
-                    r.push(col)
-                }
-            }
+            return Ok(rows);
         }
 
-        Ok(r)
+        Ok(vec![])
+    }
+
+    /// Run an insert statement. The results will be assumed to be from an insert statement.
+    fn insert(&mut self, command: impl AsRef<str>) -> Result<()> {
+        let payloads = match self.run(command.as_ref()) {
+            Ok(v) => v,
+            Err(e) => return Err(e),
+        };
+        if payloads.len() < 1 {
+            error!("No payloads returned, insertion probably failed");
+            return Err(Error::InsertFailure);
+        }
+
+        Ok(())
+    }
+
+    /// Run an update statement. The results will be assumed to be from an update statement.
+    fn update(&mut self, command: impl AsRef<str>) -> Result<()> {
+        let payloads = match self.run(command.as_ref()) {
+            Ok(v) => v,
+            Err(e) => return Err(e),
+        };
+        if payloads.len() < 1 {
+            error!("No payloads returned, update probably failed");
+            return Err(Error::UpdateFailure);
+        }
+
+        Ok(())
+    }
+
+    /// Run a delete statement. The results will be assumed to be from a delete statement.
+    fn delete(&mut self, command: impl AsRef<str>) -> Result<()> {
+        let payloads = match self.run(command.as_ref()) {
+            Ok(v) => v,
+            Err(e) => return Err(e),
+        };
+        if payloads.len() < 1 {
+            error!("No payloads returned, delete probably failed");
+            return Err(Error::DeleteFailure);
+        }
+
+        Ok(())
+    }
+
+    /// Run a create table statement. The results will be assumed to be from a create table statement.
+    fn create_table(&mut self, command: impl AsRef<str>) -> Result<()> {
+        let payloads = match self.run(command.as_ref()) {
+            Ok(v) => v,
+            Err(e) => return Err(e),
+        };
+        if payloads.len() < 1 {
+            error!("No payloads returned, create table probably failed");
+            return Err(Error::CreateTableFailure);
+        }
+
+        Ok(())
+    }
+
+    /// Run a drop table statement. The results will be assumed to be from a drop table statement.
+    fn drop_table(&mut self, command: impl AsRef<str>) -> Result<()> {
+        let payloads = match self.run(command.as_ref()) {
+            Ok(v) => v,
+            Err(e) => return Err(e),
+        };
+        if payloads.len() < 1 {
+            error!("No payloads returned, drop table probably failed");
+            return Err(Error::DropTableFailure);
+        }
+
+        Ok(())
+    }
+
+    /// Run an alter table statement. The results will be assumed to be from an alter table statement.
+    fn alter_table(&mut self, command: impl AsRef<str>) -> Result<()> {
+        let payloads = match self.run(command.as_ref()) {
+            Ok(v) => v,
+            Err(e) => return Err(e),
+        };
+        if payloads.len() < 1 {
+            error!("No payloads returned, alter table probably failed");
+            return Err(Error::AlterTableFailure);
+        }
+
+        Ok(())
     }
 }

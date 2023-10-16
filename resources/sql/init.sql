@@ -1,5 +1,8 @@
 begin;
 
+/*
+App metadata. Basically, any data that is not directly modifiable by the user.
+*/
 create table Metadata (
     last_startup timestamp,
     last_shutdown timestamp,
@@ -8,6 +11,10 @@ create table Metadata (
     base_options uuid
 );
 
+/*
+Data for a Runner, which is a grouping of resources needed for vpuppr to work.
+The id is used for querying all the other tables for data.
+*/
 create table RunnerData (
     id uuid primary key not null,
     name text,
@@ -16,22 +23,25 @@ create table RunnerData (
     model_path text,
     preview_path text,
     is_favorite boolean,
-    last_used timestamp,
-
-    options uuid
+    last_used timestamp
 );
 
 create table GeneralOptions (
     id uuid primary key not null,
+    parent uuid not null,
 
-    i_facial_mocap_options uuid,
-    vtube_studio_options uuid,
-    meow_face_options uuid,
-    media_pipe_options uuid,
+    window_size map,
+    window_screen integer
+);
+
+create table CustomOptions (
+    id uuid primary key not null,
+    parent uuid not null,
 );
 
 create table IFacialMocapOptions (
     id uuid primary key not null,
+    parent uuid not null,
 
     address inet,
     port integer
@@ -39,6 +49,7 @@ create table IFacialMocapOptions (
 
 create table VTubeStudioOptions (
     id uuid primary key not null,
+    parent uuid not null,
 
     address inet,
     port integer
@@ -46,6 +57,7 @@ create table VTubeStudioOptions (
 
 create table MeowFaceOptions (
     id uuid primary key not null,
+    parent uuid not null,
 
     address inet,
     port integer
@@ -53,12 +65,14 @@ create table MeowFaceOptions (
 
 create table MediaPipeOptions (
     id uuid primary key not null,
+    parent uuid not null,
 
     camera_resolution map
 );
 
 create table Puppet3d (
     id uuid primary key not null,
+    parent uuid not null,
 
     head_bone text,
     ik_target_transforms uuid
@@ -66,6 +80,7 @@ create table Puppet3d (
 
 create table IkTargetTransforms (
     id uuid primary key not null,
+    parent uuid not null,
 
     head map,
     left_hand map,
@@ -77,14 +92,12 @@ create table IkTargetTransforms (
 
 create table GlbPuppet (
     id uuid primary key not null,
-
-    puppet uuid
+    parent uuid not null
 );
 
 create table VrmPuppet (
     id uuid primary key not null,
-
-    puppet uuid,
+    parent uuid not null,
 
     blink_threshold float,
     link_eye_blinks float,
@@ -92,11 +105,13 @@ create table VrmPuppet (
 );
 
 create table Puppet2d (
-    id uuid primary key not null
+    id uuid primary key not null,
+    parent uuid not null
 );
 
 create table PngPuppet (
-    id uuid primary key not null
+    id uuid primary key not null,
+    parent uuid not null
 );
 
 commit;
