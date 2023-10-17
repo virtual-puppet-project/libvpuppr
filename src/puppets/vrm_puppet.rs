@@ -1,7 +1,4 @@
-use std::{
-    collections::{hash_map::RandomState, HashMap},
-    sync::{Arc, RwLock},
-};
+use std::collections::{hash_map::RandomState, HashMap};
 
 use godot::{
     engine::{
@@ -9,16 +6,20 @@ use godot::{
     },
     prelude::*,
 };
-use log::{debug, error, info};
+use log::{debug, error};
 use rayon::prelude::*;
 
 use crate::{
-    gstring,
-    model::{self, tracking_data::VTubeStudioData, IFacialMocapData},
+    model::{
+        self,
+        puppet::{PuppetData, VrmData},
+        tracking_data::VTubeStudioData,
+        IFacialMocapData,
+    },
     Logger,
 };
 
-use super::{BlendShapeMapping, IkTargets3d, Puppet, Puppet3d};
+use super::{BlendShapeMapping, IkTargets3d, Puppet, Puppet3d, Puppet3dError};
 
 const ANIM_PLAYER: &str = "AnimationPlayer";
 const MESH_INST_3D: &str = "MeshInstance3D";
@@ -74,35 +75,12 @@ impl Default for VrmFeatures {
 
 #[derive(Debug, GodotClass)]
 #[class(base = Node3D)]
-// Puppet3d
-#[property(name = head_bone, type = GodotString, get = get_head_bone, set = set_head_bone)]
-#[property(name = head_bone_id, type = GodotString, get = get_head_bone_id, set = set_head_bone_id)]
-#[property(
-    name = additional_movement_bones,
-    type = Array<i32>,
-    get = get_additional_movement_bones,
-    set = set_additional_movement_bones,
-)]
-#[property(
-    name = initial_bone_poses,
-    type = Dictionary,
-    get = get_initial_bone_poses,
-    set = set_initial_bone_poses
-)]
-// VrmPuppet
-#[property(name = blink_threshold, type = f32, get = get_blink_threshold, set = set_blink_threshold)]
-#[property(name = link_eye_blinks, type = bool, get = get_link_eye_blinks, set = set_link_eye_blinks)]
-#[property(name = use_raw_eye_rotation, type = bool, get = get_use_raw_eye_rotation, set = set_use_raw_eye_rotation)]
-// #[property(name = vrm_type, type = VrmType, get = get_vrm_type, set = set_vrm_type)]
 pub struct VrmPuppet {
     #[var]
     pub logger: Gd<Logger>,
 
     #[base]
     pub base: Base<Node3D>,
-
-    pub puppet3d: model::puppet::Puppet3d,
-    pub vrm_puppet: model::puppet::VrmPuppet,
 
     // Intentionally not exposed
     vrm_features: VrmFeatures,
@@ -125,9 +103,6 @@ impl Node3DVirtual for VrmPuppet {
             logger: Logger::create("VrmPuppet".into()),
 
             base,
-
-            puppet3d: model::puppet::Puppet3d::default(),
-            vrm_puppet: model::puppet::VrmPuppet::default(),
 
             vrm_features: VrmFeatures::default(),
             vrm_meta: None,
@@ -157,20 +132,14 @@ impl Node3DVirtual for VrmPuppet {
 
         let skeleton = self.skeleton.as_ref().unwrap();
 
-        self.puppet3d.head_bone_id = skeleton.find_bone(self.puppet3d.head_bone.clone().into());
-        if self.puppet3d.head_bone_id < 0 {
-            logger.error("No head bone found!");
-            return;
-        }
-
         // TODO init skeleton bone transforms from config
 
         // This must be done after loading the user's custom rest pose
-        for i in 0..skeleton.get_bone_count() {
-            self.puppet3d
-                .initial_bone_poses
-                .insert(i, skeleton.get_bone_pose(i));
-        }
+        // for i in 0..skeleton.get_bone_count() {
+        //     self.puppet3d
+        //         .initial_bone_poses
+        //         .insert(i, skeleton.get_bone_pose(i));
+        // }
 
         let mut ik_targets_3d = IkTargets3d::default();
         // TODO these are all hardcoded, maybe pull values from elsewhere?
@@ -426,104 +395,6 @@ impl VrmPuppet {
         Error::OK
     }
 
-    #[func]
-    fn get_head_bone(&self) -> GodotString {
-        self.puppet3d.head_bone.clone().into()
-    }
-
-    #[func]
-    fn set_head_bone(&mut self, head_bone: GodotString) {
-        self.puppet3d.head_bone = head_bone.into();
-    }
-
-    #[func]
-    fn get_head_bone_id(&self) -> i32 {
-        self.puppet3d.head_bone_id
-    }
-
-    #[func]
-    fn set_head_bone_id(&mut self, head_bone_id: i32) {
-        self.puppet3d.head_bone_id = head_bone_id
-    }
-
-    #[func]
-    fn get_additional_movement_bones(&self) -> Array<i32> {
-        self.puppet3d
-            .additional_movement_bones
-            .iter()
-            .map(|v| v.clone())
-            .collect::<Array<i32>>()
-    }
-
-    #[func]
-    fn set_additional_movement_bones(&mut self, additional_movement_bones: Array<i32>) {
-        self.puppet3d.additional_movement_bones = additional_movement_bones
-            .iter_shared()
-            .collect::<Vec<i32>>();
-    }
-
-    #[func]
-    fn get_initial_bone_poses(&self) -> Dictionary {
-        self.puppet3d
-            .initial_bone_poses
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect::<Dictionary>()
-    }
-
-    #[func]
-    fn set_initial_bone_poses(&mut self, initial_bone_poses: Dictionary) {
-        self.puppet3d.initial_bone_poses = initial_bone_poses
-            .iter_shared()
-            .map(|(k, v)| {
-                (
-                    k.try_to::<i32>().unwrap_or_default(),
-                    v.try_to::<Transform3D>().unwrap_or_default(),
-                )
-            })
-            .collect::<HashMap<i32, Transform3D>>();
-    }
-
-    #[func]
-    fn get_blink_threshold(&self) -> f32 {
-        self.vrm_puppet.blink_threshold
-    }
-
-    #[func]
-    fn set_blink_threshold(&mut self, blink_threshold: f32) {
-        self.vrm_puppet.blink_threshold = blink_threshold;
-    }
-
-    #[func]
-    fn get_link_eye_blinks(&self) -> bool {
-        self.vrm_puppet.link_eye_blinks
-    }
-
-    #[func]
-    fn set_link_eye_blinks(&mut self, link_eye_blinks: bool) {
-        self.vrm_puppet.link_eye_blinks = link_eye_blinks;
-    }
-
-    #[func]
-    fn get_use_raw_eye_rotation(&self) -> bool {
-        self.vrm_puppet.use_raw_eye_rotation
-    }
-
-    #[func]
-    fn set_use_raw_eye_rotation(&mut self, use_raw_eye_rotation: bool) {
-        self.vrm_puppet.use_raw_eye_rotation = use_raw_eye_rotation;
-    }
-
-    // #[func]
-    // fn get_vrm_type(&self) -> VrmType {
-    //     self.vrm_puppet.vrm_type.into()
-    // }
-
-    // #[func]
-    // fn set_vrm_type(&mut self, vrm_type: VrmType) {
-    //     self.vrm_puppet.vrm_type = vrm_type.into();
-    // }
-
     #[func(rename = handle_i_facial_mocap)]
     fn handle_i_facial_mocap_bound(&mut self, data: Gd<IFacialMocapData>) {
         self.handle_i_facial_mocap(data);
@@ -603,12 +474,62 @@ impl Puppet for VrmPuppet {
 //
 // This does mean that the code is extremely not DRY
 impl Puppet3d for VrmPuppet {
+    // fn init_pose(&mut self, data: Gd<RunnerData>) -> Result<(), Puppet3dError> {
+    //     if self.skeleton.is_none() {
+    //         return Err(Puppet3dError::NodeNotReady);
+    //     }
+    //     let PuppetData::Vrm(VrmData { puppet, .. }) = &data.bind().puppet_data else {
+    //         return Err(Puppet3dError::PuppetTypeMismatch);
+    //     };
+
+    //     let skeleton = self.skeleton.as_ref().unwrap();
+
+    //     let mut ik_targets_3d = IkTargets3d::default();
+    //     // TODO these are all hardcoded, maybe pull values from elsewhere?
+    //     if let v @ Some(_) = self.create_armature("HeadArmature", "Head") {
+    //         ik_targets_3d.head = v;
+
+    //         let mut tx = skeleton.get_bone_global_pose(skeleton.find_bone("Head".into()));
+    //         tx.origin = self.base.to_global(tx.origin);
+    //         ik_targets_3d.head_starting_transform = tx;
+    //     }
+    //     if let v @ Some(_) = self.create_armature("LeftHandArmature", "LeftHand") {
+    //         ik_targets_3d.left_hand = v;
+
+    //         let mut tx = skeleton.get_bone_global_pose(skeleton.find_bone("LeftHand".into()));
+    //         tx.origin = self.base.to_global(tx.origin);
+    //         ik_targets_3d.left_hand_starting_transform = tx;
+    //     }
+    //     if let v @ Some(_) = self.create_armature("RightHandArmature", "RightHand") {
+    //         ik_targets_3d.right_hand = v;
+
+    //         let mut tx = skeleton.get_bone_global_pose(skeleton.find_bone("RightHand".into()));
+    //         tx.origin = self.base.to_global(tx.origin);
+    //         ik_targets_3d.right_hand_starting_transform = tx;
+    //     }
+    //     if let v @ Some(_) = self.create_armature("HipsArmature", "Hips") {
+    //         ik_targets_3d.hips = v;
+    //     }
+    //     if let v @ Some(_) = self.create_armature("LeftFootArmature", "LeftFoot") {
+    //         ik_targets_3d.left_foot = v;
+    //     }
+    //     if let v @ Some(_) = self.create_armature("RightFootArmature", "RightFoot") {
+    //         ik_targets_3d.right_foot = v;
+    //     }
+    //     self.ik_targets_3d = Some(Gd::new(ik_targets_3d));
+
+    //     //
+
+    //     Ok(())
+    // }
+
     fn handle_i_facial_mocap(&mut self, data: Gd<IFacialMocapData>) {
         let data = data.bind();
         let skeleton = self.skeleton.as_mut().unwrap();
 
         if let Some(ik) = self.ik_targets_3d.as_mut() {
-            let rotation = Vector3::new(data.rotation.x, data.rotation.y, data.rotation.z).to_variant();
+            let rotation =
+                Vector3::new(data.rotation.x, data.rotation.y, data.rotation.z).to_variant();
             if let Some(v) = ik.bind_mut().head.as_mut() {
                 v.call_deferred("set_rotation_degrees".into(), &[rotation.clone()]);
             }
@@ -743,7 +664,7 @@ impl Puppet3d for VrmPuppet {
 
         let tx = Transform3D::from_projection(projection.inverse());
 
-        skeleton.set_bone_pose_rotation(self.puppet3d.head_bone_id, tx.basis.to_quat());
+        // skeleton.set_bone_pose_rotation(self.puppet3d.head_bone_id, tx.basis.to_quat());
 
         let blend_shapes: HashMap<String, f32, RandomState> = HashMap::from_iter(
             blend_shapes

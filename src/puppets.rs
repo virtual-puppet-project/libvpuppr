@@ -2,15 +2,11 @@ pub mod glb_puppet;
 pub mod png_puppet;
 pub mod vrm_puppet;
 
-use std::fmt::Display;
+use std::{error::Error, fmt::Display};
 
-use godot::{
-    engine::{MeshInstance3D, Skeleton3D},
-    prelude::*,
-};
+use godot::{engine::Skeleton3D, prelude::*};
 
 use crate::{
-    gstring,
     model::tracking_data::{IFacialMocapData, VTubeStudioData},
     Logger,
 };
@@ -46,11 +42,32 @@ pub trait Puppet {
     fn managed_node(&self) -> Gd<Node>;
 }
 
+#[derive(Debug)]
+pub enum Puppet3dError {
+    NodeNotReady,
+    PuppetTypeMismatch,
+}
+
+impl Display for Puppet3dError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Puppet3dError::NodeNotReady => "Node not ready",
+                Puppet3dError::PuppetTypeMismatch => "Puppet type mismatch",
+            }
+        )
+    }
+}
+
+impl Error for Puppet3dError {}
+
 pub const SKELETON_NODE_NAME_3D: &str = "*Skeleton*";
 pub trait Puppet3d: Puppet {
     fn find_skeleton(&self, base: &Base<Node3D>) -> Option<Gd<Skeleton3D>> {
         if let Some(v) = base
-            .find_child_ex(gstring!(SKELETON_NODE_NAME_3D))
+            .find_child_ex(SKELETON_NODE_NAME_3D.into())
             .owned(false)
             .done()
         {
