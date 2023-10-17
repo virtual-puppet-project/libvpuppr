@@ -12,6 +12,8 @@ use godot::{
 };
 use log::{debug, error};
 
+use crate::model::dao::ToVariantDao;
+
 pub const DB_PATH: &str = "user://db";
 
 const INIT_SQL: &str = include_str!("../resources/sql/init.sql");
@@ -53,84 +55,6 @@ impl Display for Error {
 impl std::error::Error for Error {}
 
 type Result<T> = std::result::Result<T, Error>;
-
-/// Local [ToVariant] trait so that it can be implemented on [Value].
-trait ToVariantDb {
-    fn to_variant(&self) -> Variant;
-}
-
-impl ToVariantDb for Value {
-    fn to_variant(&self) -> Variant {
-        match self {
-            Value::Bool(v) => Variant::from(*v),
-            Value::I8(v) => Variant::from(*v),
-            Value::I16(v) => Variant::from(*v),
-            Value::I32(v) => Variant::from(*v),
-            Value::I64(v) => Variant::from(*v),
-            Value::I128(v) => Variant::from(*v as i64),
-            Value::U8(v) => Variant::from(*v),
-            Value::U16(v) => Variant::from(*v),
-            Value::U32(v) => Variant::from(*v),
-            Value::U64(v) => Variant::from(*v as u32),
-            Value::U128(v) => Variant::from(*v as u32),
-            Value::F32(v) => Variant::from(*v),
-            Value::F64(v) => Variant::from(*v),
-            Value::Decimal(v) => Variant::from(v.to_string()),
-            Value::Str(v) => Variant::from(v.to_string()),
-            Value::Bytea(v) => Variant::from(PackedByteArray::from_iter(v.clone())),
-            Value::Inet(v) => Variant::from(v.to_string()),
-            Value::Date(v) => {
-                let mut d = Dictionary::new();
-                d.insert("year", v.year());
-                d.insert("month", v.month());
-                d.insert("day", v.day());
-
-                Variant::from(d)
-            }
-            Value::Timestamp(v) => {
-                let mut d = Dictionary::new();
-                d.insert("year", v.year());
-                d.insert("month", v.month());
-                d.insert("day", v.day());
-                d.insert("hour", v.hour());
-                d.insert("minute", v.minute());
-                d.insert("second", v.second());
-
-                Variant::from(d)
-            }
-            Value::Time(v) => {
-                let mut d = Dictionary::new();
-                d.insert("hour", v.hour());
-                d.insert("minute", v.minute());
-                d.insert("second", v.second());
-
-                Variant::from(d)
-            }
-            Value::Interval(v) => Variant::from(format!("{v:?}")),
-            Value::Uuid(v) => Variant::from(v.to_string()),
-            Value::Map(v) => {
-                let mut d = Dictionary::new();
-
-                for (k, v) in v.iter() {
-                    d.insert(k.clone(), v.to_variant());
-                }
-
-                Variant::from(d)
-            }
-            Value::List(v) => {
-                let mut a = Array::new();
-
-                for value in v.iter() {
-                    a.push(value.to_variant());
-                }
-
-                Variant::from(a)
-            }
-            Value::Point(v) => Variant::from(Vector2::new(v.x as f32, v.y as f32)),
-            Value::Null => Variant::nil(),
-        }
-    }
-}
 
 #[derive(GodotClass)]
 pub struct Database {
@@ -223,7 +147,7 @@ impl Database {
 
     /// Run a select query.
     #[func(rename = select)]
-    fn select_bound(&mut self, command: GodotString) -> Array<Array<Variant>> {
+    pub fn select_bound(&mut self, command: GodotString) -> Array<Array<Variant>> {
         debug!("Selecting sql: {command}");
 
         if let Ok(v) = self.select(command.to_string()) {
@@ -317,7 +241,7 @@ impl Database {
 
 impl Database {
     /// Execute a sql command and return the raw results.
-    fn run(&mut self, command: impl AsRef<str>) -> Result<Vec<Payload>> {
+    pub fn run(&mut self, command: impl AsRef<str>) -> Result<Vec<Payload>> {
         let command = command.as_ref();
         self.execute(command).map_err(|error| {
             error!("Unable to execute:\n{}", command);
@@ -329,7 +253,7 @@ impl Database {
     }
 
     /// Run a select query. The results will be assumed to be from a select statement.
-    fn select(&mut self, command: impl AsRef<str>) -> Result<Vec<Vec<Value>>> {
+    pub fn select(&mut self, command: impl AsRef<str>) -> Result<Vec<Vec<Value>>> {
         let mut payloads = match self.run(command.as_ref()) {
             Ok(v) => v,
             Err(e) => return Err(e),
@@ -352,7 +276,7 @@ impl Database {
     }
 
     /// Run an insert statement. The results will be assumed to be from an insert statement.
-    fn insert(&mut self, command: impl AsRef<str>) -> Result<()> {
+    pub fn insert(&mut self, command: impl AsRef<str>) -> Result<()> {
         let payloads = match self.run(command.as_ref()) {
             Ok(v) => v,
             Err(e) => return Err(e),
@@ -366,7 +290,7 @@ impl Database {
     }
 
     /// Run an update statement. The results will be assumed to be from an update statement.
-    fn update(&mut self, command: impl AsRef<str>) -> Result<()> {
+    pub fn update(&mut self, command: impl AsRef<str>) -> Result<()> {
         let payloads = match self.run(command.as_ref()) {
             Ok(v) => v,
             Err(e) => return Err(e),
@@ -380,7 +304,7 @@ impl Database {
     }
 
     /// Run a delete statement. The results will be assumed to be from a delete statement.
-    fn delete(&mut self, command: impl AsRef<str>) -> Result<()> {
+    pub fn delete(&mut self, command: impl AsRef<str>) -> Result<()> {
         let payloads = match self.run(command.as_ref()) {
             Ok(v) => v,
             Err(e) => return Err(e),
@@ -394,7 +318,7 @@ impl Database {
     }
 
     /// Run a create table statement. The results will be assumed to be from a create table statement.
-    fn create_table(&mut self, command: impl AsRef<str>) -> Result<()> {
+    pub fn create_table(&mut self, command: impl AsRef<str>) -> Result<()> {
         let payloads = match self.run(command.as_ref()) {
             Ok(v) => v,
             Err(e) => return Err(e),
@@ -408,7 +332,7 @@ impl Database {
     }
 
     /// Run a drop table statement. The results will be assumed to be from a drop table statement.
-    fn drop_table(&mut self, command: impl AsRef<str>) -> Result<()> {
+    pub fn drop_table(&mut self, command: impl AsRef<str>) -> Result<()> {
         let payloads = match self.run(command.as_ref()) {
             Ok(v) => v,
             Err(e) => return Err(e),
@@ -422,7 +346,7 @@ impl Database {
     }
 
     /// Run an alter table statement. The results will be assumed to be from an alter table statement.
-    fn alter_table(&mut self, command: impl AsRef<str>) -> Result<()> {
+    pub fn alter_table(&mut self, command: impl AsRef<str>) -> Result<()> {
         let payloads = match self.run(command.as_ref()) {
             Ok(v) => v,
             Err(e) => return Err(e),

@@ -26,61 +26,59 @@ create table RunnerData (
     last_used timestamp
 );
 
-create table GeneralOptions (
-    id uuid primary key not null,
-    parent uuid not null,
+/*
+General app options. Applicable for all puppets.
+*/
+create table General (
+    parent uuid unique not null,
 
     window_size map,
     window_screen integer
 );
 
-create table CustomOptions (
-    id uuid primary key not null,
-    parent uuid not null,
+/*
+Custom options. This is the only free-floating table and is used for storing
+data from 3rd-party plugins.
+*/
+create table Custom (
+    parent uuid unique not null,
 );
 
-create table IFacialMocapOptions (
-    id uuid primary key not null,
-    parent uuid not null,
+create table IFacialMocap (
+    parent uuid unique not null,
 
     address inet,
     port integer
 );
 
-create table VTubeStudioOptions (
-    id uuid primary key not null,
-    parent uuid not null,
+create table VTubeStudio (
+    parent uuid unique not null,
 
     address inet,
     port integer
 );
 
-create table MeowFaceOptions (
-    id uuid primary key not null,
-    parent uuid not null,
+create table MeowFace (
+    parent uuid unique not null,
 
     address inet,
     port integer
 );
 
-create table MediaPipeOptions (
-    id uuid primary key not null,
-    parent uuid not null,
+create table MediaPipe (
+    parent uuid unique not null,
 
     camera_resolution map
 );
 
 create table Puppet3d (
-    id uuid primary key not null,
-    parent uuid not null,
+    parent uuid unique not null,
 
-    head_bone text,
-    ik_target_transforms uuid
+    head_bone text
 );
 
 create table IkTargetTransforms (
-    id uuid primary key not null,
-    parent uuid not null,
+    parent uuid unique not null,
 
     head map,
     left_hand map,
@@ -91,13 +89,11 @@ create table IkTargetTransforms (
 );
 
 create table GlbPuppet (
-    id uuid primary key not null,
-    parent uuid not null
+    parent uuid unique not null
 );
 
 create table VrmPuppet (
-    id uuid primary key not null,
-    parent uuid not null,
+    parent uuid unique not null,
 
     blink_threshold float,
     link_eye_blinks float,
@@ -105,13 +101,11 @@ create table VrmPuppet (
 );
 
 create table Puppet2d (
-    id uuid primary key not null,
-    parent uuid not null
+    parent uuid unique not null
 );
 
 create table PngPuppet (
-    id uuid primary key not null,
-    parent uuid not null
+    parent uuid unique not null
 );
 
 commit;
