@@ -1,7 +1,7 @@
 mod cli;
 mod logger;
-pub mod model;
-mod puppets;
+// pub mod model;
+// mod puppets;
 
 use godot::{
     engine::{global::Error, Os},
