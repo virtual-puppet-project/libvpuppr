@@ -96,7 +96,8 @@ impl DataParser {
                             k
                                 // TODO maybe use https://github.com/BurntSushi/aho-corasick for faster replace?
                                 .replace("_L", "left")
-                                .replace("_R", "right"),
+                                .replace("_R", "right")
+                                .to_lowercase(),
                             f32::from(v.parse::<i16>().unwrap_or(0)) / 100.0,
                         );
                     } else if v.is_empty() {
@@ -155,7 +156,7 @@ impl DataParser {
             Array::from_iter(data.blend_shapes.unwrap_or_default().into_iter().map(|v| {
                 let mut r = Dictionary::new();
 
-                r.insert("k", v.k);
+                r.insert("k", v.k.to_lowercase());
                 r.insert("v", v.v);
 
                 r
