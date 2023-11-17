@@ -39,7 +39,7 @@ impl DataParser {
                                 );
 
                                 r.insert(
-                                    "postion",
+                                    "position",
                                     Vector3::new(
                                         vals.get(3)
                                             .map(|v| v.parse::<f32>().unwrap_or_default())
