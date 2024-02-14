@@ -21,73 +21,18 @@ impl DataParser {
                         // TODO these are all gross, there must be a better way
                         match k {
                             "=head" => {
-                                let vals = v.splitn(5, ',').collect::<Vec<&str>>();
+                                let vals = split_f32_with_trailing_zero(v, 5, ',');
 
-                                r.insert(
-                                    "rotation",
-                                    Vector3::new(
-                                        vals.get(0)
-                                            .map(|v| v.parse::<f32>().unwrap_or_default())
-                                            .unwrap_or_default(),
-                                        vals.get(1)
-                                            .map(|v| v.parse::<f32>().unwrap_or_default())
-                                            .unwrap_or_default(),
-                                        vals.get(2)
-                                            .map(|v| v.parse::<f32>().unwrap_or_default())
-                                            .unwrap_or_default(),
-                                    ),
-                                );
-
-                                r.insert(
-                                    "position",
-                                    Vector3::new(
-                                        vals.get(3)
-                                            .map(|v| v.parse::<f32>().unwrap_or_default())
-                                            .unwrap_or_default(),
-                                        vals.get(4)
-                                            .map(|v| v.parse::<f32>().unwrap_or_default())
-                                            .unwrap_or_default(),
-                                        vals.get(5)
-                                            .map(|v| v.parse::<f32>().unwrap_or_default())
-                                            .unwrap_or_default(),
-                                    ),
-                                );
+                                r.insert("rotation", Vector3::new(vals[0], vals[1], vals[2]));
+                                r.insert("position", Vector3::new(vals[3], vals[4], vals[5]));
                             }
                             "rightEye" => {
-                                let vals = v.splitn(2, ',').collect::<Vec<&str>>();
-
-                                r.insert(
-                                    "right_eye",
-                                    Vector3::new(
-                                        vals.get(0)
-                                            .map(|v| v.parse::<f32>().unwrap_or_default())
-                                            .unwrap_or_default(),
-                                        vals.get(1)
-                                            .map(|v| v.parse::<f32>().unwrap_or_default())
-                                            .unwrap_or_default(),
-                                        vals.get(2)
-                                            .map(|v| v.parse::<f32>().unwrap_or_default())
-                                            .unwrap_or_default(),
-                                    ),
-                                );
+                                let vals = split_f32_with_trailing_zero(v, 2, ',');
+                                r.insert("right_eye", Vector3::new(vals[0], vals[1], vals[2]));
                             }
                             "leftEye" => {
-                                let vals = v.splitn(2, ',').collect::<Vec<&str>>();
-
-                                r.insert(
-                                    "left_eye",
-                                    Vector3::new(
-                                        vals.get(0)
-                                            .map(|v| v.parse::<f32>().unwrap_or_default())
-                                            .unwrap_or_default(),
-                                        vals.get(1)
-                                            .map(|v| v.parse::<f32>().unwrap_or_default())
-                                            .unwrap_or_default(),
-                                        vals.get(2)
-                                            .map(|v| v.parse::<f32>().unwrap_or_default())
-                                            .unwrap_or_default(),
-                                    ),
-                                );
+                                let vals = split_f32_with_trailing_zero(v, 2, ',');
+                                r.insert("left_eye", Vector3::new(vals[0], vals[1], vals[2]));
                             }
                             _ => error!("Unhandled ifm data key: {k}"),
                         }
@@ -165,4 +110,12 @@ impl DataParser {
 
         r
     }
+}
+
+fn split_f32_with_trailing_zero(v: &str, n: usize, pat: char) -> Vec<f32> {
+    v.splitn(n, pat)
+        .map(|v| v.parse().unwrap_or_default())
+        .chain(std::iter::repeat(0.))
+        .take(n + 1)
+        .collect()
 }
